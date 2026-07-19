@@ -356,7 +356,8 @@ export default function HomePage() {
     if (cat === "bank") {
       return [
         ["Date", "Description", "Reference Number", "Amount", "Deposit", "Credit"],
-        ["2026-07-16 15:00:00", `SETTLEMENT FROM GATEWAY`, `UTR_RAZORPAY_99`, "10250.20", "10250.20", "10250.20"]
+        ["2026-07-16 15:00:00", `SETTLEMENT FROM GATEWAY`, `UTR_RAZORPAY_99`, "10250.20", "10250.20", "10250.20"],
+        ["2026-07-16 16:30:00", `UPI PAYMENT RECEIVED`, `REFRACT_PRO_4999`, "4999.00", "4999.00", "4999.00"]
       ].map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
     }
 
