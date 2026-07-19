@@ -1,0 +1,3 @@
+"Order ID","Sale Amount","Commission","Shipping Charge","Tax","Net Settlement Amount","Settlement Date","UTR"
+"OD1234567890","1499.00","150.00","65.00","38.70","1245.30","2026-07-15 17:30:00","FKUTR556677"
+"OD1234567891","2499.00","250.00","75.00","58.50","2115.50","2026-07-15 18:00:00","FKUTR556677"

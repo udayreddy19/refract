@@ -1,0 +1,6 @@
+"Order Number","Transaction ID","Order Total","Status","Date"
+"WC_1001","ch_stripe_1001","2499.00","completed","2026-07-15 10:00:00"
+"WC_1002","ch_stripe_1002","3499.00","completed","2026-07-15 10:30:00"
+"WC_1003","ch_stripe_1003","1250.00","completed","2026-07-15 11:15:00"
+"WC_1004","","899.00","pending","2026-07-15 12:00:00"
+"WC_1005","ch_stripe_1005","4500.00","completed","2026-07-15 12:30:00"
