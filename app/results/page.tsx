@@ -340,6 +340,7 @@ export default function ResultsPage() {
   const [isPro, setIsPro]               = useState(false);
   const [verificationSource, setVerificationSource] = useState<"statement" | "gateway">("gateway");
   const [showProDashboard, setShowProDashboard] = useState(false);
+  const [selectedPlan, setSelectedPlan]         = useState<"monthly" | "quarterly" | "annual">("monthly");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -475,6 +476,13 @@ export default function ResultsPage() {
       let isVerified = false;
       let source: "statement" | "gateway" = "gateway";
       
+      const planDetails = {
+        monthly: { amount: 499900, utr: "REFRACT_PRO_4999" },
+        quarterly: { amount: 999900, utr: "REFRACT_PRO_9999" },
+        annual: { amount: 2999900, utr: "REFRACT_PRO_29999" }
+      };
+      const currentDetails = planDetails[selectedPlan];
+      
       try {
         const payloadRaw = sessionStorage.getItem("refract_payload");
         if (payloadRaw) {
@@ -493,8 +501,8 @@ export default function ResultsPage() {
                 const depositStr = r["deposit"] || r["credit"] || r["amount"] || r["transaction_amount"] || "0";
                 const depositPaise = Math.round(parseFloat(depositStr.replace(/[₹,\s]/g, "")) * 100);
                 
-                // Check if UTR is in reference number and amount is ₹4,999 (499900 paise)
-                if (refNo.toLowerCase().includes(utrValue.toLowerCase().trim()) && depositPaise === 499900) {
+                // Check if UTR is in reference number and amount matches target plan's amount in paise
+                if (refNo.toLowerCase().includes(utrValue.toLowerCase().trim()) && depositPaise === currentDetails.amount) {
                   isVerified = true;
                   source = "statement";
                   break;
@@ -853,10 +861,74 @@ export default function ResultsPage() {
                   <h3 style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "var(--sp-2)", letterSpacing: "-0.03em" }}>
                     Want this automatically, every day?
                   </h3>
-                  <p className="text-secondary" style={{ fontSize: 14, marginBottom: "var(--sp-5)", maxWidth: 460, margin: "0 auto var(--sp-5)" }}>
+                  <p className="text-secondary" style={{ fontSize: 14, marginBottom: "var(--sp-6)", maxWidth: 460, margin: "0 auto var(--sp-6)" }}>
                     Connect your sales integration API keys and e-commerce stores — fresh reconciliation, daily digest,
                     no manual CSV exports.
                   </p>
+
+                  {/* Modern Flat Plan Selector */}
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    gap: "12px",
+                    maxWidth: "600px",
+                    margin: "0 auto var(--sp-6)",
+                    flexWrap: "wrap"
+                  }}>
+                    {[
+                      { id: "monthly", label: "Monthly", price: "₹4,999/mo", detail: "Billed Monthly", savings: "" },
+                      { id: "quarterly", label: "Quarterly", price: "₹3,333/mo", detail: "₹9,999/quarter", savings: "Save 33%" },
+                      { id: "annual", label: "Annual Plan", price: "₹2,499/mo", detail: "₹29,999/year", savings: "Save 50%" }
+                    ].map((plan) => {
+                      const isSelected = selectedPlan === plan.id;
+                      return (
+                        <div
+                          key={plan.id}
+                          onClick={() => setSelectedPlan(plan.id as any)}
+                          style={{
+                            flex: "1 1 160px",
+                            background: isSelected ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
+                            border: isSelected ? "1.5px solid var(--yellow)" : "1px solid var(--g-border)",
+                            borderRadius: "14px",
+                            padding: "12px 14px",
+                            cursor: "pointer",
+                            textAlign: "center",
+                            position: "relative",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
+                          {plan.savings && (
+                            <span style={{
+                              position: "absolute",
+                              top: "-9px",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              background: "linear-gradient(135deg, #10B981, #059669)",
+                              color: "#fff",
+                              fontSize: "9px",
+                              fontWeight: 800,
+                              padding: "1px 6px",
+                              borderRadius: "99px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.03em"
+                            }}>
+                              {plan.savings}
+                            </span>
+                          )}
+                          <div style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: isSelected ? "var(--t-hi)" : "var(--t-mid)", letterSpacing: "0.05em", marginBottom: "4px" }}>
+                            {plan.label}
+                          </div>
+                          <div style={{ fontSize: "18px", fontWeight: 800, color: "var(--t-hi)", letterSpacing: "-0.02em" }}>
+                            {plan.price}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "var(--t-dim)", marginTop: "2px" }}>
+                            {plan.detail}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   <div style={{ display: "flex", gap: "var(--sp-3)", justifyContent: "center", flexWrap: "wrap" }}>
                     <motion.button
                       className="btn btn-primary"
@@ -871,7 +943,11 @@ export default function ResultsPage() {
                       style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
                     >
                       <GlassIcon icon={Sparkles} variant="dark" size="sm" />
-                      <span>Get Started — ₹4,999/month</span>
+                      <span>
+                        {selectedPlan === "monthly" ? "Get Started — ₹4,999/month" :
+                         selectedPlan === "quarterly" ? "Get Started — ₹9,999/quarter" :
+                         "Get Started — ₹29,999/year"}
+                      </span>
                     </motion.button>
                     <motion.button
                       className="btn btn-secondary"
@@ -965,10 +1041,14 @@ export default function ResultsPage() {
               {checkoutStep === "pay" ? (
                 <>
                   <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "8px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
-                    Activate Refract Pro
+                    Activate Refract Pro ({selectedPlan === "monthly" ? "Monthly" : selectedPlan === "quarterly" ? "Quarterly" : "Annual"})
                   </h3>
                   <p style={{ fontSize: "13px", color: "var(--t-mid)", textAlign: "center", marginBottom: "20px", maxWidth: "340px" }}>
-                    Scan the Paytm QR to complete the subscription of <strong style={{ color: "var(--t-hi)" }}>₹4,999/month</strong>.
+                    Scan the Paytm QR to complete the subscription of <strong style={{ color: "var(--t-hi)" }}>
+                      {selectedPlan === "monthly" ? "₹4,999/month" :
+                       selectedPlan === "quarterly" ? "₹9,999/quarter" :
+                       "₹29,999/year"}
+                    </strong>.
                   </p>
 
                   {/* QR Code Container */}
