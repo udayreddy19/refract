@@ -31,8 +31,9 @@ import { runRecon } from "@/lib/engine/matcher";
 import type { ReconResult, Exception, ExceptionType, Match, Order, Payment, SettlementItem } from "@/lib/engine/types";
 import * as XLSX from "xlsx";
 import GlassIcon from "@/components/GlassIcon";
-import { Check, CheckCircle, AlertTriangle, AlertCircle, Coins, ShieldCheck, HelpCircle, ArrowLeft, Download, FileSpreadsheet, Hourglass, Percent, RotateCw, Ghost, Sparkles, CheckSquare, X, Copy } from "lucide-react";
+import { Check, CheckCircle, AlertTriangle, AlertCircle, Coins, ShieldCheck, HelpCircle, ArrowLeft, Download, FileSpreadsheet, Hourglass, Percent, RotateCw, Ghost, Sparkles, CheckSquare, X, Copy, ChevronDown, LogOut } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
+import AuthModal from "@/components/AuthModal";
 
 /* ── Formatting ──────────────────────────────────────────────────────────── */
 function fmt(p: number) {
@@ -341,10 +342,17 @@ export default function ResultsPage() {
   const [verificationSource, setVerificationSource] = useState<"statement" | "gateway">("gateway");
   const [showProDashboard, setShowProDashboard] = useState(false);
   const [selectedPlan, setSelectedPlan]         = useState<"monthly" | "quarterly" | "annual">("monthly");
+  const [user, setUser]                         = useState<{ name: string; email: string; avatar: string } | null>(null);
+  const [showAuthModal, setShowAuthModal]       = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsPro(localStorage.getItem("refract_pro_active") === "true");
+      const stored = localStorage.getItem("refract_user");
+      if (stored) {
+        setUser(JSON.parse(stored));
+      }
     }
     setToday(new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
     try {
@@ -572,7 +580,7 @@ export default function ResultsPage() {
               </span>
             )}
           </a>
-          <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center", position: "relative" }}>
             <span className="text-muted" style={{ fontSize: 12.5 }}>{today}</span>
             <ThemeToggle />
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
@@ -589,6 +597,123 @@ export default function ResultsPage() {
               <GlassIcon icon={Download} variant="dark" size="sm" style={{ width: 20, height: 20, borderRadius: 4 }} />
               <span>Export Excel</span>
             </motion.button>
+
+            {user ? (
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={() => setShowUserDropdown(!showUserDropdown)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "20px",
+                    padding: "4px 8px 4px 4px",
+                    cursor: "pointer",
+                    color: "var(--t-hi)"
+                  }}
+                  id="user-menu-btn"
+                >
+                  <div style={{
+                    width: "24px",
+                    height: "24px",
+                    borderRadius: "50%",
+                    background: "var(--yellow)",
+                    color: "#1e1b4b",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 700,
+                    fontSize: "11px"
+                  }}>
+                    {user.avatar}
+                  </div>
+                  <span style={{ fontSize: "12.5px", fontWeight: 600 }}>{user.name.split(" ")[0]}</span>
+                  <ChevronDown size={13} style={{ color: "var(--t-dim)" }} />
+                </button>
+
+                <AnimatePresence>
+                  {showUserDropdown && (
+                    <>
+                      {/* Invisible backdrop click handler */}
+                      <div
+                        onClick={() => setShowUserDropdown(false)}
+                        style={{ position: "fixed", inset: 0, zIndex: 90 }}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                        transition={{ duration: 0.2 }}
+                        style={{
+                          position: "absolute",
+                          top: "36px",
+                          right: 0,
+                          background: "var(--g-bg-card)",
+                          border: "1px solid var(--g-border)",
+                          borderRadius: "12px",
+                          boxShadow: "var(--s-glass)",
+                          width: "200px",
+                          padding: "8px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                          zIndex: 100
+                        }}
+                      >
+                        <div style={{ padding: "6px 8px", borderBottom: "1px solid rgba(255,255,255,0.05)", marginBottom: "4px" }}>
+                          <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--t-hi)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {user.name}
+                          </div>
+                          <div style={{ fontSize: "10.5px", color: "var(--t-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {user.email}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            localStorage.removeItem("refract_user");
+                            setUser(null);
+                            setShowUserDropdown(false);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            background: "none",
+                            border: "none",
+                            borderRadius: "6px",
+                            padding: "8px",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            color: "#ef4444",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            transition: "background 0.2s"
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.08)"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                        >
+                          <LogOut size={14} />
+                          <span>Sign Out</span>
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowAuthModal(true)}
+                id="sign-in-btn"
+              >
+                Sign In
+              </motion.button>
+            )}
           </div>
         </motion.nav>
 
@@ -1385,6 +1510,12 @@ export default function ResultsPage() {
           </div>
         )}
       </AnimatePresence>
+
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={(loggedUser) => setUser(loggedUser)}
+      />
     </>
   );
 }
