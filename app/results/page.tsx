@@ -31,7 +31,7 @@ import { runRecon } from "@/lib/engine/matcher";
 import type { ReconResult, Exception, ExceptionType, Match, Order, Payment, SettlementItem } from "@/lib/engine/types";
 import * as XLSX from "xlsx";
 import GlassIcon from "@/components/GlassIcon";
-import { Check, CheckCircle, AlertTriangle, AlertCircle, Coins, ShieldCheck, HelpCircle, ArrowLeft, Download, FileSpreadsheet, Hourglass, Percent, RotateCw, Ghost, Sparkles, CheckSquare } from "lucide-react";
+import { Check, CheckCircle, AlertTriangle, AlertCircle, Coins, ShieldCheck, HelpCircle, ArrowLeft, Download, FileSpreadsheet, Hourglass, Percent, RotateCw, Ghost, Sparkles, CheckSquare, X, Copy } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 
 /* ── Formatting ──────────────────────────────────────────────────────────── */
@@ -333,6 +333,10 @@ export default function ResultsPage() {
   const [filter,      setFilter]      = useState<FilterType>("ALL");
   const [showMatched, setShowMatched] = useState(false);
   const [today,       setToday]       = useState("");
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [copiedUpi, setCopiedUpi]       = useState(false);
+  const [utrValue, setUtrValue]         = useState("");
+  const [checkoutStep, setCheckoutStep] = useState<"pay" | "submitted">("pay");
 
   useEffect(() => {
     setToday(new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
@@ -721,6 +725,11 @@ export default function ResultsPage() {
                   whileHover={{ scale: 1.04, y: -2 }}
                   whileTap={{ scale: 0.96 }}
                   id="get-started-btn"
+                  onClick={() => {
+                    setCheckoutStep("pay");
+                    setUtrValue("");
+                    setShowCheckout(true);
+                  }}
                   style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
                 >
                   <GlassIcon icon={Sparkles} variant="dark" size="sm" />
@@ -747,6 +756,222 @@ export default function ResultsPage() {
           <strong>Refract</strong> · All computation runs in your browser. No data sent to our servers.
         </footer>
       </div>
+
+      {/* Checkout Modal */}
+      <AnimatePresence>
+        {showCheckout && (
+          <div
+            className="checkout-modal-overlay"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              zIndex: 1000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "20px"
+            }}
+            onClick={() => setShowCheckout(false)}
+          >
+            <motion.div
+              className="checkout-modal-card"
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+              style={{
+                background: "var(--g-bg-card)",
+                border: "1px solid var(--g-border)",
+                borderRadius: "20px",
+                boxShadow: "var(--s-glass)",
+                width: "100%",
+                maxWidth: "460px",
+                padding: "24px",
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowCheckout(false)}
+                style={{
+                  position: "absolute",
+                  top: "16px",
+                  right: "16px",
+                  background: "rgba(255,255,255,0.06)",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: "28px",
+                  height: "28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "var(--t-hi)",
+                  transition: "background 0.2s"
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+              >
+                <X size={15} />
+              </button>
+
+              {checkoutStep === "pay" ? (
+                <>
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "8px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
+                    Activate Refract Pro
+                  </h3>
+                  <p style={{ fontSize: "13px", color: "var(--t-mid)", textAlign: "center", marginBottom: "20px", maxWidth: "340px" }}>
+                    Scan the Paytm QR to complete the subscription of <strong style={{ color: "var(--t-hi)" }}>₹4,999/month</strong>.
+                  </p>
+
+                  {/* QR Code Container */}
+                  <div style={{
+                    width: 200,
+                    height: 350,
+                    overflow: "hidden",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "#fff",
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+                    marginBottom: "16px",
+                    position: "relative"
+                  }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/paytm_qr.jpg"
+                      alt="Paytm QR Code"
+                      style={{
+                        width: 350,
+                        height: 200,
+                        transform: "rotate(90deg)",
+                        objectFit: "contain"
+                      }}
+                    />
+                  </div>
+
+                  {/* Account Info */}
+                  <div style={{
+                    width: "100%",
+                    background: "rgba(255, 255, 255, 0.03)",
+                    border: "1px solid rgba(255, 255, 255, 0.05)",
+                    borderRadius: "10px",
+                    padding: "10px 14px",
+                    marginBottom: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "4px"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                      <span style={{ color: "var(--t-mid)" }}>Account:</span>
+                      <span style={{ color: "var(--t-hi)", fontWeight: 700 }}>Thalamati Udaykumar</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                      <span style={{ color: "var(--t-mid)" }}>UPI ID:</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ color: "var(--t-hi)", fontFamily: "monospace", fontSize: "11px" }}>paytmqr281005...</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText("paytmqr28100505050101fi5qu5@paytm");
+                            setCopiedUpi(true);
+                            setTimeout(() => setCopiedUpi(false), 2000);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: copiedUpi ? "var(--green)" : "var(--t-mid)",
+                            display: "flex",
+                            alignItems: "center"
+                          }}
+                        >
+                          {copiedUpi ? <Check size={12} /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* UTR Input Form */}
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-mid)" }}>
+                      UPI Ref / UTR Number
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input
+                        type="text"
+                        placeholder="Enter 12-digit UTR number"
+                        value={utrValue}
+                        onChange={(e) => setUtrValue(e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: "rgba(255, 255, 255, 0.04)",
+                          border: "1px solid rgba(255, 255, 255, 0.08)",
+                          borderRadius: "8px",
+                          padding: "10px 14px",
+                          color: "var(--t-hi)",
+                          fontSize: "13px",
+                          outline: "none",
+                          fontFamily: "inherit"
+                        }}
+                      />
+                      <button
+                        className="btn btn-primary"
+                        disabled={!utrValue.trim()}
+                        onClick={() => setCheckoutStep("submitted")}
+                        style={{
+                          padding: "0 18px",
+                          borderRadius: "8px",
+                          fontSize: "13px"
+                        }}
+                      >
+                        Submit
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "10px 0" }}>
+                  <div style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    background: "rgba(52, 211, 153, 0.1)",
+                    border: "1px solid rgba(52, 211, 153, 0.2)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: "16px"
+                  }}>
+                    <CheckCircle size={24} color="var(--green)" />
+                  </div>
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "8px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
+                    Payment Submitted!
+                  </h3>
+                  <p style={{ fontSize: "13px", color: "var(--t-mid)", lineHeight: 1.5, marginBottom: "20px", maxWidth: "320px" }}>
+                    Transaction UTR: <strong style={{ color: "var(--t-hi)" }}>{utrValue}</strong> has been logged. Our verification team will activate your Pro features within 30 minutes!
+                  </p>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setShowCheckout(false)}
+                    style={{ width: "100%", padding: "10px 0", borderRadius: "8px" }}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
