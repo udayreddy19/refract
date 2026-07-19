@@ -339,6 +339,7 @@ export default function ResultsPage() {
   const [checkoutStep, setCheckoutStep] = useState<"pay" | "verifying" | "submitted">("pay");
   const [isPro, setIsPro]               = useState(false);
   const [verificationSource, setVerificationSource] = useState<"statement" | "gateway">("gateway");
+  const [showProDashboard, setShowProDashboard] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -809,8 +810,8 @@ export default function ResultsPage() {
                     textAlign: "left"
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                      <span style={{ color: "var(--t-mid)" }}>Active Subscription:</span>
-                      <span style={{ color: "var(--t-hi)", fontWeight: 700 }}>₹4,999/month</span>
+                      <span style={{ color: "var(--t-mid)" }}>Active Plan:</span>
+                      <span style={{ color: "var(--t-hi)", fontWeight: 700 }}>Refract Enterprise Pro</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
                       <span style={{ color: "var(--t-mid)" }}>API Sync Status:</span>
@@ -826,6 +827,7 @@ export default function ResultsPage() {
                       className="btn btn-primary"
                       whileHover={{ scale: 1.04 }}
                       whileTap={{ scale: 0.96 }}
+                      onClick={() => setShowProDashboard(true)}
                       style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
                     >
                       <span>Manage Pro Dashboard</span>
@@ -1128,6 +1130,177 @@ export default function ResultsPage() {
                   </button>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Pro Dashboard Modal */}
+      <AnimatePresence>
+        {showProDashboard && (
+          <div
+            className="pro-dashboard-overlay"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              zIndex: 1000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "20px"
+            }}
+            onClick={() => setShowProDashboard(false)}
+          >
+            <motion.div
+              className="pro-dashboard-card"
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+              style={{
+                background: "var(--g-bg-card)",
+                border: "1px solid var(--g-border)",
+                borderRadius: "20px",
+                boxShadow: "var(--s-glass)",
+                width: "100%",
+                maxWidth: "500px",
+                padding: "24px",
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowProDashboard(false)}
+                style={{
+                  position: "absolute",
+                  top: "16px",
+                  right: "16px",
+                  background: "rgba(255,255,255,0.06)",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: "28px",
+                  height: "28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "var(--t-hi)",
+                  transition: "background 0.2s"
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+              >
+                <X size={15} />
+              </button>
+
+              <div>
+                <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "4px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
+                  Refract Pro Dashboard
+                </h3>
+                <p style={{ fontSize: "13px", color: "var(--t-mid)" }}>
+                  Monitor and manage your automated reconciliation integrations.
+                </p>
+              </div>
+
+              {/* Status Section */}
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: "12px",
+                padding: "14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
+                  <span style={{ color: "var(--t-mid)" }}>Recon Pipeline Status:</span>
+                  <span style={{ color: "var(--green)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--green)", display: "inline-block" }}></span>
+                    Healthy & Active
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
+                  <span style={{ color: "var(--t-mid)" }}>Automation Schedule:</span>
+                  <span style={{ color: "var(--t-hi)", fontWeight: 600 }}>Daily at 09:00 AM (IST)</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
+                  <span style={{ color: "var(--t-mid)" }}>Verification Type:</span>
+                  <span style={{ color: "var(--t-hi)", textTransform: "capitalize" }}>{verificationSource} Statement Verified</span>
+                </div>
+              </div>
+
+              {/* API Integrations */}
+              <div>
+                <h4 style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-mid)", marginBottom: "8px" }}>
+                  Connected E-Commerce APIs
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {[
+                    { name: "Shopify API Connector", status: "Active & Synced", desc: "Order details pull endpoint" },
+                    { name: "Razorpay Webhook Listener", status: "Active & Listening", desc: "Settlement trigger webhook" },
+                    { name: "HDFC Statement SFTP Feed", status: "Active & Connected", desc: "Daily bank ledger feed" }
+                  ].map((api, idx) => (
+                    <div key={idx} style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      background: "rgba(255,255,255,0.01)",
+                      border: "1px solid rgba(255,255,255,0.03)",
+                      borderRadius: "8px",
+                      padding: "8px 12px"
+                    }}>
+                      <div>
+                        <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--t-hi)" }}>{api.name}</div>
+                        <div style={{ fontSize: "11px", color: "var(--t-dim)" }}>{api.desc}</div>
+                      </div>
+                      <span style={{ fontSize: "11px", color: "var(--green)", fontWeight: 600 }}>{api.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Automation Logs */}
+              <div>
+                <h4 style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-mid)", marginBottom: "8px" }}>
+                  Recent Automation Logs
+                </h4>
+                <div style={{
+                  maxHeight: "100px",
+                  overflowY: "auto",
+                  background: "rgba(0,0,0,0.1)",
+                  border: "1px solid rgba(255,255,255,0.04)",
+                  borderRadius: "8px",
+                  padding: "8px 12px",
+                  fontFamily: "monospace",
+                  fontSize: "11px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  color: "var(--t-mid)"
+                }}>
+                  <div>[2026-07-19 09:00:01] - Shopify orders loaded: 11 transactions.</div>
+                  <div>[2026-07-19 09:00:02] - Razorpay payouts synced: 11 matches, 2 exceptions.</div>
+                  <div>[2026-07-19 09:00:03] - Excel report refract_recon_2026-07-19.xlsx auto-archived.</div>
+                  <div>[2026-07-18 09:00:01] - Scheduled run: 15 orders processed. Auto-matched 100%.</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setShowProDashboard(false)}
+                  style={{ flex: 1, padding: "10px 0", borderRadius: "8px", fontSize: "13px" }}
+                >
+                  Done
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
