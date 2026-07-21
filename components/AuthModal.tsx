@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Mail, Lock, User, AlertCircle, Shield, Loader2 } from "lucide-react";
+import { X, Mail, Lock, User, AlertCircle, Shield, Loader2, Phone, KeyRound } from "lucide-react";
 import {
   signInWithGoogle,
   signInWithEmail,
   signUpWithEmail,
+  sendPhoneOTP,
+  verifyPhoneOTP,
   type UserSession,
 } from "@/lib/auth";
+import type { ConfirmationResult } from "firebase/auth";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,10 +20,14 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
-  const [tab, setTab] = useState<"login" | "signup">("login");
+  const [tab, setTab] = useState<"login" | "signup" | "phone">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -30,9 +37,53 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
       setName("");
       setEmail("");
       setPassword("");
+      setPhone("");
+      setOtp("");
+      setOtpSent(false);
+      setConfirmationResult(null);
       setLoading(false);
     }
   }, [isOpen]);
+
+  const handleSendPhoneOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!phone.trim()) {
+      setError("Please enter your phone number with country code (e.g. +1234567890).");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await sendPhoneOTP(phone.trim(), "recaptcha-container");
+      setConfirmationResult(result);
+      setOtpSent(true);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to send OTP.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyPhoneOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!otp.trim() || !confirmationResult) {
+      setError("Please enter the verification code.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const userSession = await verifyPhoneOTP(confirmationResult, otp.trim(), name.trim());
+      onSuccess(userSession);
+      onClose();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Invalid OTP code.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleAuth = async () => {
     setError("");
@@ -192,6 +243,9 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               </p>
             </div>
 
+            {/* Invisible Recaptcha Container for Phone Auth */}
+            <div id="recaptcha-container"></div>
+
             {/* Switch Tabs */}
             <div style={{
               display: "flex",
@@ -208,7 +262,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                   border: "none",
                   borderRadius: "6px",
                   padding: "8px 0",
-                  fontSize: "13px",
+                  fontSize: "12.5px",
                   fontWeight: tab === "login" ? 700 : 500,
                   color: tab === "login" ? "var(--t-hi)" : "var(--t-mid)",
                   cursor: "pointer",
@@ -225,7 +279,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                   border: "none",
                   borderRadius: "6px",
                   padding: "8px 0",
-                  fontSize: "13px",
+                  fontSize: "12.5px",
                   fontWeight: tab === "signup" ? 700 : 500,
                   color: tab === "signup" ? "var(--t-hi)" : "var(--t-mid)",
                   cursor: "pointer",
@@ -234,97 +288,273 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               >
                 Sign Up
               </button>
+              <button
+                onClick={() => { setTab("phone"); setError(""); setOtpSent(false); }}
+                style={{
+                  flex: 1,
+                  background: tab === "phone" ? "rgba(255,255,255,0.08)" : "none",
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "8px 0",
+                  fontSize: "12.5px",
+                  fontWeight: tab === "phone" ? 700 : 500,
+                  color: tab === "phone" ? "var(--t-hi)" : "var(--t-mid)",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+              >
+                Phone
+              </button>
             </div>
 
-            {/* Google OAuth Option */}
-            <button
-              onClick={handleGoogleAuth}
-              disabled={loading}
-              style={{
+            {/* Google OAuth Option (shown for login / signup) */}
+            {tab !== "phone" && (
+              <>
+                <button
+                  onClick={handleGoogleAuth}
+                  disabled={loading}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "10px",
+                    width: "100%",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "8px",
+                    padding: "10px 0",
+                    fontSize: "13.5px",
+                    fontWeight: 600,
+                    color: "var(--t-hi)",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    opacity: loading ? 0.6 : 1,
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
+                >
+                  {loading ? (
+                    <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.57 14.99 1 12 1 7.35 1 3.37 3.65 1.4 7.56l3.86 3c.96-2.88 3.66-5.52 6.74-5.52z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.43c-.28 1.44-1.09 2.67-2.33 3.51l3.61 2.8c2.12-1.95 3.78-4.82 3.78-8.49z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.26 14.28c-.24-.72-.38-1.5-.38-2.28s.14-1.56.38-2.28L1.4 6.72C.51 8.5.01 10.45.01 12.5s.5 4 1.39 5.78l3.86-3z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.61-2.8c-1.2.81-2.73 1.3-4.35 1.3-3.08 0-5.78-2.64-6.74-5.52l-3.86 3C3.37 20.35 7.35 23 12 23z"
+                      />
+                    </svg>
+                  )}
+                  <span>Continue with Google</span>
+                </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.06)" }}></div>
+                  <span style={{ fontSize: "11px", color: "var(--t-dim)", textTransform: "uppercase" }}>or</span>
+                  <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.06)" }}></div>
+                </div>
+              </>
+            )}
+
+            {/* Error Message */}
+            {error && (
+              <div style={{
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                borderRadius: "8px",
+                padding: "10px 12px",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                gap: "10px",
-                width: "100%",
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "8px",
-                padding: "10px 0",
-                fontSize: "13.5px",
-                fontWeight: 600,
-                color: "var(--t-hi)",
-                cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.6 : 1,
-                transition: "background 0.2s"
-              }}
-              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
-            >
-              {loading ? (
-                <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+                gap: "8px",
+                color: "#ef4444",
+                fontSize: "12.5px"
+              }}>
+                <AlertCircle size={15} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Phone Auth Form */}
+            {tab === "phone" ? (
+              !otpSent ? (
+                <form onSubmit={handleSendPhoneOTP} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
+                      Phone Number (with Country Code)
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
+                        <Phone size={15} />
+                      </span>
+                      <input
+                        type="tel"
+                        placeholder="e.g. +919876543210"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        disabled={loading}
+                        style={{
+                          width: "100%",
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: "8px",
+                          padding: "10px 12px 10px 36px",
+                          fontSize: "13.5px",
+                          color: "var(--t-hi)",
+                          outline: "none"
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    style={{
+                      marginTop: "12px",
+                      background: "var(--yellow)",
+                      color: "#1e1b4b",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "11px 0",
+                      fontSize: "13.5px",
+                      fontWeight: 700,
+                      cursor: loading ? "not-allowed" : "pointer",
+                      opacity: loading ? 0.7 : 1,
+                      textAlign: "center",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px"
+                    }}
+                  >
+                    {loading && <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />}
+                    Send OTP Code
+                  </button>
+                </form>
               ) : (
-                <svg viewBox="0 0 24 24" width="16" height="16">
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.57 14.99 1 12 1 7.35 1 3.37 3.65 1.4 7.56l3.86 3c.96-2.88 3.66-5.52 6.74-5.52z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.43c-.28 1.44-1.09 2.67-2.33 3.51l3.61 2.8c2.12-1.95 3.78-4.82 3.78-8.49z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.26 14.28c-.24-.72-.38-1.5-.38-2.28s.14-1.56.38-2.28L1.4 6.72C.51 8.5.01 10.45.01 12.5s.5 4 1.39 5.78l3.86-3z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.61-2.8c-1.2.81-2.73 1.3-4.35 1.3-3.08 0-5.78-2.64-6.74-5.52l-3.86 3C3.37 20.35 7.35 23 12 23z"
-                  />
-                </svg>
-              )}
-              <span>Continue with Google</span>
-            </button>
+                <form onSubmit={handleVerifyPhoneOTP} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
+                      Enter 6-digit Verification Code
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
+                        <KeyRound size={15} />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="e.g. 123456"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value)}
+                        disabled={loading}
+                        style={{
+                          width: "100%",
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: "8px",
+                          padding: "10px 12px 10px 36px",
+                          fontSize: "13.5px",
+                          color: "var(--t-hi)",
+                          outline: "none"
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    style={{
+                      marginTop: "12px",
+                      background: "var(--yellow)",
+                      color: "#1e1b4b",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "11px 0",
+                      fontSize: "13.5px",
+                      fontWeight: 700,
+                      cursor: loading ? "not-allowed" : "pointer",
+                      opacity: loading ? 0.7 : 1,
+                      textAlign: "center",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px"
+                    }}
+                  >
+                    {loading && <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />}
+                    Verify OTP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOtpSent(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--t-mid)",
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      marginTop: "4px"
+                    }}
+                  >
+                    Change Phone Number
+                  </button>
+                </form>
+              )
+            ) : (
+              /* Email/Password Form */
+              <form onSubmit={handleManualAuth} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {tab === "signup" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
+                      Full Name
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
+                        <User size={15} />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="e.g. John Doe"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        disabled={loading}
+                        style={{
+                          width: "100%",
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: "8px",
+                          padding: "10px 12px 10px 36px",
+                          fontSize: "13.5px",
+                          color: "var(--t-hi)",
+                          outline: "none"
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
 
-            {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.06)" }}></div>
-              <span style={{ fontSize: "11px", color: "var(--t-dim)", textTransform: "uppercase" }}>or</span>
-              <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.06)" }}></div>
-            </div>
-
-            {/* Manual Form */}
-            <form onSubmit={handleManualAuth} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {error && (
-                <div style={{
-                  background: "rgba(239, 68, 68, 0.08)",
-                  border: "1px solid rgba(239, 68, 68, 0.2)",
-                  borderRadius: "8px",
-                  padding: "10px 12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  color: "#ef4444",
-                  fontSize: "12.5px"
-                }}>
-                  <AlertCircle size={15} />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {tab === "signup" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
-                    Full Name
+                    Email Address
                   </label>
                   <div style={{ position: "relative" }}>
                     <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
-                      <User size={15} />
+                      <Mail size={15} />
                     </span>
                     <input
-                      type="text"
-                      placeholder="e.g. John Doe"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      type="email"
+                      placeholder="e.g. name@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       disabled={loading}
                       style={{
                         width: "100%",
@@ -339,89 +569,60 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                     />
                   </div>
                 </div>
-              )}
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
-                  Email Address
-                </label>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
-                    <Mail size={15} />
-                  </span>
-                  <input
-                    type="email"
-                    placeholder="e.g. name@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={loading}
-                    style={{
-                      width: "100%",
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: "8px",
-                      padding: "10px 12px 10px 36px",
-                      fontSize: "13.5px",
-                      color: "var(--t-hi)",
-                      outline: "none"
-                    }}
-                  />
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
+                    Password
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
+                      <Lock size={15} />
+                    </span>
+                    <input
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading}
+                      style={{
+                        width: "100%",
+                        background: "rgba(255,255,255,0.02)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "8px",
+                        padding: "10px 12px 10px 36px",
+                        fontSize: "13.5px",
+                        color: "var(--t-hi)",
+                        outline: "none"
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "var(--t-mid)", letterSpacing: "0.05em" }}>
-                  Password
-                </label>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--t-dim)", display: "flex" }}>
-                    <Lock size={15} />
-                  </span>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={loading}
-                    style={{
-                      width: "100%",
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: "8px",
-                      padding: "10px 12px 10px 36px",
-                      fontSize: "13.5px",
-                      color: "var(--t-hi)",
-                      outline: "none"
-                    }}
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  marginTop: "12px",
-                  background: "var(--yellow)",
-                  color: "#1e1b4b",
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "11px 0",
-                  fontSize: "13.5px",
-                  fontWeight: 700,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  opacity: loading ? 0.7 : 1,
-                  textAlign: "center" as const,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px"
-                }}
-              >
-                {loading && <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />}
-                {tab === "login" ? "Sign In" : "Sign Up"}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    marginTop: "12px",
+                    background: "var(--yellow)",
+                    color: "#1e1b4b",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "11px 0",
+                    fontSize: "13.5px",
+                    fontWeight: 700,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    opacity: loading ? 0.7 : 1,
+                    textAlign: "center" as const,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px"
+                  }}
+                >
+                  {loading && <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />}
+                  {tab === "login" ? "Sign In" : "Sign Up"}
+                </button>
+              </form>
+            )}
           </motion.div>
         </div>
       )}

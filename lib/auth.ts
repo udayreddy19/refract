@@ -7,6 +7,9 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  type ConfirmationResult,
   type Auth,
 } from "firebase/auth";
 import {
@@ -239,37 +242,61 @@ export const signInWithGoogle = (): Promise<UserSession> => {
     });
   }
 
-  // Fallback Popup window flow
-  return new Promise((resolve) => {
-    const width = 500;
-    const height = 600;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-    
-    window.open(
-      "/auth/google-mock",
-      "google_mock_auth",
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
+  // No Firebase configured — Google sign-in requires Firebase
+  return Promise.reject(
+    new Error("Google sign-in requires Firebase configuration. Please add your Firebase credentials to .env.local")
+  );
+};
 
-    const listener = (event: MessageEvent) => {
-      if (event.data && event.data.type === "AUTH_SUCCESS") {
-        const mockUser = event.data.user;
-        const userSession: UserSession = {
-          uid: "mock_google_" + Math.random().toString(36).substr(2, 9),
-          name: mockUser.name,
-          email: mockUser.email,
-          avatar: mockUser.avatar,
-          isPro: false,
-        };
-        
-        localStorage.setItem("refract_user", JSON.stringify(userSession));
-        window.removeEventListener("message", listener);
-        resolve(userSession);
-      }
-    };
-    window.addEventListener("message", listener);
-  });
+// 4.5. Phone Authentication Helpers
+export const sendPhoneOTP = async (
+  phoneNumber: string,
+  containerId: string
+): Promise<ConfirmationResult> => {
+  if (isFirebaseConfigured && auth) {
+    const recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+      size: "invisible",
+    });
+    const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+    return confirmationResult;
+  }
+  throw new Error("Phone authentication requires Firebase configuration. Please add your Firebase credentials to .env.local");
+};
+
+export const verifyPhoneOTP = async (
+  confirmationResult: ConfirmationResult,
+  otp: string,
+  name: string
+): Promise<UserSession> => {
+  if (isFirebaseConfigured && auth && db) {
+    const credential = await confirmationResult.confirm(otp);
+    const firebaseUser = credential.user;
+    const userRef = doc(db, "users", firebaseUser.uid);
+    const userDoc = await getDoc(userRef);
+
+    let userSession: UserSession;
+    if (!userDoc.exists()) {
+      const displayName = name || firebaseUser.phoneNumber || "Phone User";
+      const initials = getInitials(displayName);
+      userSession = {
+        uid: firebaseUser.uid,
+        name: displayName,
+        email: firebaseUser.phoneNumber || "",
+        avatar: initials,
+        isPro: false,
+      };
+      await setDoc(userRef, {
+        name: userSession.name,
+        email: userSession.email,
+        avatar: userSession.avatar,
+        isPro: false,
+      });
+    } else {
+      userSession = { uid: firebaseUser.uid, ...userDoc.data() } as UserSession;
+    }
+    return userSession;
+  }
+  throw new Error("Phone authentication requires Firebase configuration.");
 };
 
 // 5. Sign Out
