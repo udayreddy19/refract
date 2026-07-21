@@ -2,12 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Mail, Lock, User, AlertCircle, Shield } from "lucide-react";
+import { X, Mail, Lock, User, AlertCircle, Shield, Loader2 } from "lucide-react";
+import {
+  signInWithGoogle,
+  signInWithEmail,
+  signUpWithEmail,
+  type UserSession,
+} from "@/lib/auth";
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (user: { name: string; email: string; avatar: string }) => void;
+  onSuccess: (user: UserSession) => void;
 }
 
 export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
@@ -16,6 +22,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -23,38 +30,30 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
       setName("");
       setEmail("");
       setPassword("");
+      setLoading(false);
     }
   }, [isOpen]);
 
-  const handleGoogleAuth = () => {
+  const handleGoogleAuth = async () => {
     setError("");
-    const width = 500;
-    const height = 600;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-    
-    const popup = window.open(
-      "/auth/google-mock",
-      "google_mock_auth",
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
-
-    const listener = (event: MessageEvent) => {
-      if (event.data && event.data.type === "AUTH_SUCCESS") {
-        const user = event.data.user;
-        
-        // Save to localStorage session
-        localStorage.setItem("refract_user", JSON.stringify(user));
-        onSuccess(user);
-        onClose();
-        window.removeEventListener("message", listener);
+    setLoading(true);
+    try {
+      const userSession = await signInWithGoogle();
+      onSuccess(userSession);
+      onClose();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Google sign-in failed.";
+      // Don't show error if user simply closed the popup
+      if (!message.includes("popup-closed-by-user") && !message.includes("cancelled-popup-request")) {
+        setError(message);
       }
-    };
-    
-    window.addEventListener("message", listener);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleManualAuth = (e: React.FormEvent) => {
+  const handleManualAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -68,54 +67,40 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
       return;
     }
 
-    // Get current user list from localStorage
-    const usersRaw = localStorage.getItem("refract_users");
-    const users = usersRaw ? JSON.parse(usersRaw) : [];
+    if (password.trim().length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
 
-    if (tab === "signup") {
-      // Sign Up flow
-      const exists = users.some((u: any) => u.email.toLowerCase() === email.toLowerCase());
-      if (exists) {
+    setLoading(true);
+    try {
+      let userSession: UserSession;
+      if (tab === "signup") {
+        userSession = await signUpWithEmail(email.trim(), password.trim(), name.trim());
+      } else {
+        userSession = await signInWithEmail(email.trim(), password.trim());
+      }
+      onSuccess(userSession);
+      onClose();
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Authentication failed.";
+      // Make Firebase error messages more user-friendly
+      if (message.includes("auth/email-already-in-use")) {
         setError("An account with this email already exists.");
-        return;
-      }
-
-      const initials = name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase();
-
-      const newUser = {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password: password.trim(),
-        avatar: initials || "U"
-      };
-
-      users.push(newUser);
-      localStorage.setItem("refract_users", JSON.stringify(users));
-      
-      const loggedUser = { name: newUser.name, email: newUser.email, avatar: newUser.avatar };
-      localStorage.setItem("refract_user", JSON.stringify(loggedUser));
-      onSuccess(loggedUser);
-      onClose();
-    } else {
-      // Login flow
-      const foundUser = users.find(
-        (u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-      );
-
-      if (!foundUser) {
+      } else if (message.includes("auth/invalid-credential") || message.includes("auth/wrong-password") || message.includes("auth/user-not-found")) {
         setError("Invalid email or password.");
-        return;
+      } else if (message.includes("auth/weak-password")) {
+        setError("Password must be at least 6 characters.");
+      } else if (message.includes("auth/invalid-email")) {
+        setError("Please enter a valid email address.");
+      } else if (message.includes("auth/too-many-requests")) {
+        setError("Too many attempts. Please try again later.");
+      } else {
+        setError(message);
       }
-
-      const loggedUser = { name: foundUser.name, email: foundUser.email, avatar: foundUser.avatar };
-      localStorage.setItem("refract_user", JSON.stringify(loggedUser));
-      onSuccess(loggedUser);
-      onClose();
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -254,6 +239,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
             {/* Google OAuth Option */}
             <button
               onClick={handleGoogleAuth}
+              disabled={loading}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -267,30 +253,35 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                 fontSize: "13.5px",
                 fontWeight: 600,
                 color: "var(--t-hi)",
-                cursor: "pointer",
+                cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.6 : 1,
                 transition: "background 0.2s"
               }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
               onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
             >
-              <svg viewBox="0 0 24 24" width="16" height="16">
-                <path
-                  fill="#EA4335"
-                  d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.57 14.99 1 12 1 7.35 1 3.37 3.65 1.4 7.56l3.86 3c.96-2.88 3.66-5.52 6.74-5.52z"
-                />
-                <path
-                  fill="#4285F4"
-                  d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.43c-.28 1.44-1.09 2.67-2.33 3.51l3.61 2.8c2.12-1.95 3.78-4.82 3.78-8.49z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.26 14.28c-.24-.72-.38-1.5-.38-2.28s.14-1.56.38-2.28L1.4 6.72C.51 8.5.01 10.45.01 12.5s.5 4 1.39 5.78l3.86-3z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.61-2.8c-1.2.81-2.73 1.3-4.35 1.3-3.08 0-5.78-2.64-6.74-5.52l-3.86 3C3.37 20.35 7.35 23 12 23z"
-                />
-              </svg>
+              {loading ? (
+                <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} />
+              ) : (
+                <svg viewBox="0 0 24 24" width="16" height="16">
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.57 14.99 1 12 1 7.35 1 3.37 3.65 1.4 7.56l3.86 3c.96-2.88 3.66-5.52 6.74-5.52z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.43c-.28 1.44-1.09 2.67-2.33 3.51l3.61 2.8c2.12-1.95 3.78-4.82 3.78-8.49z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.26 14.28c-.24-.72-.38-1.5-.38-2.28s.14-1.56.38-2.28L1.4 6.72C.51 8.5.01 10.45.01 12.5s.5 4 1.39 5.78l3.86-3z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.61-2.8c-1.2.81-2.73 1.3-4.35 1.3-3.08 0-5.78-2.64-6.74-5.52l-3.86 3C3.37 20.35 7.35 23 12 23z"
+                  />
+                </svg>
+              )}
               <span>Continue with Google</span>
             </button>
 
@@ -334,6 +325,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                       placeholder="e.g. John Doe"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
+                      disabled={loading}
                       style={{
                         width: "100%",
                         background: "rgba(255,255,255,0.02)",
@@ -362,6 +354,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                     placeholder="e.g. name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
                     style={{
                       width: "100%",
                       background: "rgba(255,255,255,0.02)",
@@ -389,6 +382,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
                     style={{
                       width: "100%",
                       background: "rgba(255,255,255,0.02)",
@@ -405,6 +399,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
 
               <button
                 type="submit"
+                disabled={loading}
                 style={{
                   marginTop: "12px",
                   background: "var(--yellow)",
@@ -414,10 +409,16 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
                   padding: "11px 0",
                   fontSize: "13.5px",
                   fontWeight: 700,
-                  cursor: "pointer",
-                  textAlign: "center"
+                  cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1,
+                  textAlign: "center" as const,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px"
                 }}
               >
+                {loading && <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />}
                 {tab === "login" ? "Sign In" : "Sign Up"}
               </button>
             </form>
@@ -427,3 +428,4 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     </AnimatePresence>
   );
 }
+

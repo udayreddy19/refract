@@ -15,6 +15,14 @@ import GlassIcon from "@/components/GlassIcon";
 import { Check, X, CreditCard, ShoppingBag, Zap, CheckCircle, AlertTriangle, Percent, FileSpreadsheet, Truck, Store, Smartphone, Globe, Package, Landmark, BookOpen, Megaphone, Wallet, BarChart3, ChevronDown, LogOut } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import AuthModal from "@/components/AuthModal";
+import {
+  getUserSession,
+  signOutUser,
+  onAuthStateChanged,
+  getAuthInstance,
+  isFirebaseConfigured,
+  type UserSession,
+} from "@/lib/auth";
 
 /* ── variants ──────────────────────────────────────────────────────────── */
 
@@ -267,21 +275,36 @@ export default function HomePage() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [user, setUser] = useState<{ name: string; email: string; avatar: string } | null>(null);
+  const [user, setUser] = useState<UserSession | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [pendingRecon, setPendingRecon] = useState(false);
 
+  // Listen for Firebase auth state changes (handles login, logout, and page refresh persistence)
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("refract_user");
-      if (stored) {
-        setUser(JSON.parse(stored));
+    const authInstance = getAuthInstance();
+    if (isFirebaseConfigured && authInstance) {
+      const unsubscribe = onAuthStateChanged(authInstance, async (firebaseUser) => {
+        if (firebaseUser) {
+          const session = await getUserSession();
+          setUser(session);
+        } else {
+          setUser(null);
+        }
+      });
+      return () => unsubscribe();
+    } else {
+      // Fallback: load from localStorage when Firebase is not configured
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("refract_user");
+        if (stored) {
+          setUser(JSON.parse(stored));
+        }
       }
     }
   }, []);
 
-  const handleAuthSuccess = (loggedUser: { name: string; email: string; avatar: string }) => {
+  const handleAuthSuccess = (loggedUser: UserSession) => {
     setUser(loggedUser);
   };
 
@@ -562,8 +585,8 @@ export default function HomePage() {
                           </div>
                         </div>
                         <button
-                          onClick={() => {
-                            localStorage.removeItem("refract_user");
+                          onClick={async () => {
+                            await signOutUser();
                             setUser(null);
                             setShowUserDropdown(false);
                           }}

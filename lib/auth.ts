@@ -6,6 +6,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
+  onAuthStateChanged,
+  type Auth,
 } from "firebase/auth";
 import {
   getFirestore,
@@ -41,8 +43,11 @@ export const isFirebaseConfigured =
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== "undefined" &&
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== "";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let app: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let auth: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: any;
 
 if (isFirebaseConfigured) {
@@ -340,3 +345,7 @@ export const updateSubscriptionStatus = async (
 
   throw new Error("No client storage available.");
 };
+
+// Export Firebase instances for external use (e.g. onAuthStateChanged listener)
+export { onAuthStateChanged };
+export const getAuthInstance = (): Auth | undefined => auth;
