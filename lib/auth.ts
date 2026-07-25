@@ -1,8 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
-  signInWithPopup,
-  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
@@ -204,99 +202,200 @@ export const signInWithEmail = async (email: string, password: string): Promise<
   throw new Error("No client storage available.");
 };
 
-// 4. Sign In with Google
-export const signInWithGoogle = (): Promise<UserSession> => {
-  if (isFirebaseConfigured && auth && db) {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
-        const firebaseUser = result.user;
-        const userRef = doc(db, "users", firebaseUser.uid);
-        const userDoc = await getDoc(userRef);
+// 4. Phone & Email OTP Authentication Helpers
 
-        let userSession: UserSession;
-        if (!userDoc.exists()) {
-          const name = firebaseUser.displayName || "Google User";
-          const initials = getInitials(name);
-          userSession = {
-            uid: firebaseUser.uid,
-            name,
-            email: firebaseUser.email || "",
-            avatar: initials,
-            isPro: false,
-          };
-          await setDoc(userRef, {
-            name: userSession.name,
-            email: userSession.email,
-            avatar: userSession.avatar,
-            isPro: false,
-          });
-        } else {
-          userSession = { uid: firebaseUser.uid, ...userDoc.data() } as UserSession;
-        }
-        resolve(userSession);
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }
+export interface EmailOTPSession {
+  email: string;
+  expectedOtp: string;
+}
 
-  // No Firebase configured — Google sign-in requires Firebase
-  return Promise.reject(
-    new Error("Google sign-in requires Firebase configuration. Please add your Firebase credentials to .env.local")
-  );
-};
-
-// 4.5. Phone Authentication Helpers
 export const sendPhoneOTP = async (
   phoneNumber: string,
   containerId: string
 ): Promise<ConfirmationResult> => {
-  if (isFirebaseConfigured && auth) {
-    const recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-      size: "invisible",
-    });
-    const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
-    return confirmationResult;
+  const cleanPhone = phoneNumber.trim();
+  const formattedPhone = cleanPhone.startsWith("+")
+    ? cleanPhone
+    : `+91${cleanPhone.replace(/\D/g, "")}`;
+
+  // Call backend Twilio Verify API endpoint
+  const res = await fetch("/api/send-otp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: formattedPhone, type: "phone" }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to dispatch SMS code via Twilio Verify.");
   }
-  throw new Error("Phone authentication requires Firebase configuration. Please add your Firebase credentials to .env.local");
+
+  return {
+    verificationId: data.sid || "twilio_verify_" + Date.now(),
+    confirm: async (code: string) => {
+      // Check code with Twilio VerificationCheck API
+      const verifyRes = await fetch("/api/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: formattedPhone, code: code.trim() }),
+      });
+
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.valid) {
+        throw new Error(verifyData.error || "Invalid OTP code. Please check your SMS and try again.");
+      }
+
+      return {
+        user: {
+          uid: "phone_" + formattedPhone.replace(/\D/g, ""),
+          phoneNumber: formattedPhone,
+          displayName: "",
+          email: "",
+        },
+      } as any;
+    },
+  } as ConfirmationResult;
 };
 
 export const verifyPhoneOTP = async (
   confirmationResult: ConfirmationResult,
   otp: string,
   name: string
-): Promise<UserSession> => {
+): Promise<{ uid: string; phone: string; name: string }> => {
+  const credential = await confirmationResult.confirm(otp);
+  const firebaseUser = credential.user;
+  return {
+    uid: firebaseUser.uid,
+    phone: firebaseUser.phoneNumber || "",
+    name: name || firebaseUser.phoneNumber || "Phone User",
+  };
+};
+
+export const sendEmailOTP = async (email: string): Promise<EmailOTPSession> => {
+  const cleanEmail = email.trim().toLowerCase();
+  const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Send via API Route silently (no window.alert popup)
+  try {
+    await fetch("/api/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: cleanEmail, otp: generatedOtp, type: "email" }),
+    });
+  } catch (err) {
+    console.error("API Email OTP Dispatch error:", err);
+  }
+
+  return {
+    email: cleanEmail,
+    expectedOtp: generatedOtp,
+  };
+};
+
+export const verifyEmailOTP = async (
+  session: EmailOTPSession,
+  otp: string
+): Promise<{ email: string }> => {
+  if (otp.trim() !== session.expectedOtp) {
+    throw new Error("Invalid OTP code. Please check your Mail inbox and try again.");
+  }
+  return { email: session.email };
+};
+
+// 5. Post-OTP Password Integration & Session Completion
+export const completeAuthWithPassword = async (params: {
+  name: string;
+  identifier: string; // email or phone
+  password: string;
+  method: "phone" | "email";
+  verifiedUid?: string;
+}): Promise<UserSession> => {
+  const { name, identifier, password, method, verifiedUid } = params;
+  const displayName = name.trim() || (method === "email" ? identifier.split("@")[0] : identifier);
+  const initials = getInitials(displayName);
+  const emailAddr = method === "email" ? identifier.toLowerCase() : `${identifier.replace(/\D/g, "")}@phone.refract`;
+
   if (isFirebaseConfigured && auth && db) {
-    const credential = await confirmationResult.confirm(otp);
-    const firebaseUser = credential.user;
-    const userRef = doc(db, "users", firebaseUser.uid);
+    let firebaseUid = verifiedUid;
+
+    // Try signing up or signing in with Firebase email & password
+    if (method === "email") {
+      try {
+        const credential = await createUserWithEmailAndPassword(auth, emailAddr, password);
+        firebaseUid = credential.user.uid;
+      } catch (err: any) {
+        if (err.code === "auth/email-already-in-use") {
+          const credential = await signInWithEmailAndPassword(auth, emailAddr, password);
+          firebaseUid = credential.user.uid;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const uid = firebaseUid || "usr_" + Math.random().toString(36).substring(2, 10);
+    const userRef = doc(db, "users", uid);
     const userDoc = await getDoc(userRef);
 
-    let userSession: UserSession;
-    if (!userDoc.exists()) {
-      const displayName = name || firebaseUser.phoneNumber || "Phone User";
-      const initials = getInitials(displayName);
-      userSession = {
-        uid: firebaseUser.uid,
-        name: displayName,
-        email: firebaseUser.phoneNumber || "",
-        avatar: initials,
-        isPro: false,
-      };
-      await setDoc(userRef, {
-        name: userSession.name,
-        email: userSession.email,
-        avatar: userSession.avatar,
-        isPro: false,
-      });
-    } else {
-      userSession = { uid: firebaseUser.uid, ...userDoc.data() } as UserSession;
-    }
+    const userSession: UserSession = {
+      uid,
+      name: displayName,
+      email: method === "email" ? identifier : emailAddr,
+      avatar: initials,
+      isPro: userDoc.exists() ? userDoc.data().isPro : false,
+    };
+
+    await setDoc(userRef, {
+      name: userSession.name,
+      email: userSession.email,
+      avatar: userSession.avatar,
+      isPro: userSession.isPro || false,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
     return userSession;
   }
-  throw new Error("Phone authentication requires Firebase configuration.");
+
+  // Fallback in localStorage
+  if (typeof window !== "undefined") {
+    const usersRaw = localStorage.getItem("refract_users");
+    const users = usersRaw ? JSON.parse(usersRaw) : [];
+
+    const existingIdx = users.findIndex(
+      (u: any) => u.email?.toLowerCase() === identifier.toLowerCase() || u.phone === identifier
+    );
+
+    const uid = verifiedUid || (existingIdx !== -1 ? users[existingIdx].uid : "mock_" + Math.random().toString(36).substring(2, 10));
+
+    const userObj = {
+      uid,
+      name: displayName,
+      email: method === "email" ? identifier.toLowerCase() : emailAddr,
+      phone: method === "phone" ? identifier : undefined,
+      password: password.trim(),
+      avatar: initials,
+      isPro: existingIdx !== -1 ? users[existingIdx].isPro : false,
+    };
+
+    if (existingIdx !== -1) {
+      users[existingIdx] = { ...users[existingIdx], ...userObj };
+    } else {
+      users.push(userObj);
+    }
+    localStorage.setItem("refract_users", JSON.stringify(users));
+
+    const loggedUser: UserSession = {
+      uid: userObj.uid,
+      name: userObj.name,
+      email: userObj.email,
+      avatar: userObj.avatar,
+      isPro: userObj.isPro || false,
+    };
+    localStorage.setItem("refract_user", JSON.stringify(loggedUser));
+    return loggedUser;
+  }
+
+  throw new Error("No client storage available.");
 };
 
 // 5. Sign Out
