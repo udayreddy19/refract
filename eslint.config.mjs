@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "create_example.js",
+    "public/sample/**",
+    "src/dataconnect-generated/**",
+    ".agents/**",
+    ".claude/**",
   ]),
 ]);
 

@@ -1,12 +1,15 @@
 {
-  "name": "refract",
-  "version": "0.1.0",
+  "name": "reconcilex",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:matcher": "npx --yes tsx lib/engine/matcher.selftest.ts",
+    "export:zip": "npm run build && rm -f out/api/secrets.php && find out/data -type f \\( -name '*.json' -o -name '*.sqlite' -o -name '*.sqlite-*' \\) -delete 2>/dev/null || true; rm -f reconcilex_deploy.zip && cd out && zip -r ../reconcilex_deploy.zip . -x '*.DS_Store' -x 'api/secrets.php' -x 'data/*.json' -x 'data/*.sqlite' -x 'data/*.sqlite-*'",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",

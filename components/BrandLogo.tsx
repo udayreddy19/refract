@@ -76,10 +76,10 @@ function LetterMark({ brand, size, dimmed }: { brand: BrandKey; size: number; di
 
 /* ── Main component ──────────────────────────────────────────────────── */
 export default function BrandLogo({ brand, size = 22, dimmed = false }: BrandLogoProps) {
-  const b = BRANDS[brand];
-  if (!b) return null;
-
   const [imgError, setImgError] = useState(false);
+  const b = BRANDS[brand];
+
+  if (!b) return null;
 
   // No CDN slug → always letter mark
   if (!b.slug || imgError) {

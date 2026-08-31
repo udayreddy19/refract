@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   motion,
   AnimatePresence,
-  useMotionValue,
-  useSpring,
   animate,
 } from "framer-motion";
 import {
@@ -31,22 +30,38 @@ import { runRecon } from "@/lib/engine/matcher";
 import type { ReconResult, Exception, ExceptionType, Match, Order, Payment, SettlementItem } from "@/lib/engine/types";
 import * as XLSX from "xlsx";
 import GlassIcon from "@/components/GlassIcon";
-import { Check, CheckCircle, AlertTriangle, AlertCircle, Coins, ShieldCheck, HelpCircle, ArrowLeft, Download, FileSpreadsheet, Hourglass, Percent, RotateCw, Ghost, Sparkles, CheckSquare, X, Copy, ChevronDown, LogOut } from "lucide-react";
+import { Check, CheckCircle, AlertTriangle, AlertCircle, Coins, ShieldCheck, HelpCircle, ArrowLeft, Download, Hourglass, Percent, RotateCw, Ghost, Sparkles, CheckSquare, ChevronDown, LogOut, type LucideIcon } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import AuthModal from "@/components/AuthModal";
-
+import SiteFooter from "@/components/SiteFooter";
+import CheckoutModal, { readCheckoutPlan, rememberCheckoutPlan, type PlanId } from "@/components/CheckoutModal";
+import { EXCEPTION_NEXT_STEPS } from "@/lib/exception-guidance";
+import {
+  getUserSession,
+  getPublicSettings,
+  signOutUser,
+  saveRun,
+  updateRunWorkflow,
+  explainException,
+  checkRiskAlert,
+  type PublicSettings,
+  type UserSession,
+  type ExceptionExplain,
+} from "@/lib/auth";
+import {
+  loadLocalWorkflow,
+  setWorkflowEntry,
+  encodePayloadB64,
+  type WorkflowMap,
+} from "@/lib/workflow";
+import type { MatchRules } from "@/lib/engine/matcher";
+import { DEFAULT_MATCH_RULES } from "@/lib/engine/matcher";
 /* ── Formatting ──────────────────────────────────────────────────────────── */
 function fmt(p: number) {
   return "₹" + (p / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function fmtShort(p: number) {
-  const v = p / 100;
-  if (v >= 100000) return "₹" + (v / 100000).toFixed(2) + "L";
-  if (v >= 1000)   return "₹" + (v / 1000).toFixed(1) + "K";
-  return "₹" + v.toLocaleString("en-IN");
-}
 
-const EX_META: Record<ExceptionType, { label: string; icon: any; severity: string; variant: "default" | "green" | "red" | "yellow" | "blue" | "dim" | "dark" }> = {
+const EX_META: Record<ExceptionType, { label: string; icon: LucideIcon; severity: string; variant: "default" | "green" | "red" | "yellow" | "blue" | "dim" | "dark" }> = {
   SETTLED_NO_ORDER:  { label: "Settled, No Order",    icon: Ghost,         severity: "high",   variant: "red" },
   PAID_NOT_SETTLED:  { label: "Paid, Not Settled",    icon: Hourglass,     severity: "high",   variant: "red" },
   AMOUNT_MISMATCH:   { label: "Amount Mismatch",      icon: AlertTriangle, severity: "high",   variant: "red" },
@@ -124,8 +139,8 @@ function MatchRateBar({ rate }: { rate: number }) {
 function StatCard({
   icon: IconComponent, value, label, color, index, isRupee = false, paise = 0, variant = "default" as const
 }: {
-  icon: any; value: string; label: string; color: string;
-  index: number; isRupee?: boolean; paise?: number; variant?: any;
+  icon: LucideIcon; value: string; label: string; color: string;
+  index: number; isRupee?: boolean; paise?: number; variant?: "default" | "green" | "red" | "yellow" | "blue" | "dim" | "dark";
 }) {
   return (
     <motion.div
@@ -149,14 +164,36 @@ function StatCard({
 }
 
 /* ── Exception row ───────────────────────────────────────────────────────── */
-function ExceptionRow({ ex, index }: { ex: Exception; index: number }) {
+function ExceptionRow({
+  ex,
+  index,
+  selected,
+  workflow,
+  onStatus,
+  onSelect,
+  onExplain,
+  explaining,
+}: {
+  ex: Exception;
+  index: number;
+  selected: boolean;
+  workflow?: { status: string; note?: string; assignee?: string };
+  onStatus: (id: string, status: "open" | "fixed" | "ignored" | "assigned") => void;
+  onSelect: (id: string) => void;
+  onExplain: (ex: Exception) => void;
+  explaining: boolean;
+}) {
   const meta = EX_META[ex.type] || { label: ex.type, icon: HelpCircle, severity: "low", variant: "dim" as const };
+  const status = workflow?.status || "open";
   return (
     <motion.tr
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 12 }}
       transition={{ delay: index * 0.04, duration: 0.35, ease: [0.16,1,0.3,1] }}
+      onClick={() => onSelect(ex.id)}
+      className={`ex-row ${selected ? "ex-row-selected" : ""}`}
+      style={{ cursor: "pointer", opacity: status === "ignored" ? 0.55 : 1 }}
     >
       <td><div style={{ fontWeight: 650, fontSize: 14 }}>{ex.orderNo || ex.paymentId || ex.settlementId || "—"}</div></td>
       <td>
@@ -171,7 +208,31 @@ function ExceptionRow({ ex, index }: { ex: Exception; index: number }) {
         </span>
       </td>
       <td><span className="amount negative">{fmt(ex.amountPaise)}</span></td>
-      <td style={{ maxWidth: 300, fontSize: 13, color: "var(--text-secondary)" }}>{ex.description}</td>
+      <td style={{ maxWidth: 240, fontSize: 13, color: "var(--text-secondary)" }}>{ex.description}</td>
+      <td onClick={(e) => e.stopPropagation()}>
+        <select
+          className="ex-status-select"
+          value={status}
+          onChange={(e) => onStatus(ex.id, e.target.value as "open" | "fixed" | "ignored" | "assigned")}
+          aria-label="Exception status"
+        >
+          <option value="open">Open</option>
+          <option value="assigned">Assigned</option>
+          <option value="fixed">Fixed</option>
+          <option value="ignored">Ignored</option>
+        </select>
+      </td>
+      <td onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={explaining}
+          onClick={() => onExplain(ex)}
+          style={{ fontSize: 12, padding: "4px 8px" }}
+        >
+          {explaining ? "…" : "Explain"}
+        </button>
+      </td>
     </motion.tr>
   );
 }
@@ -268,7 +329,7 @@ function formatExceptionsSheet(ws: XLSX.WorkSheet) {
 function formatMatchedSheet(ws: XLSX.WorkSheet) {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
   for (let R = 1; R <= range.e.r; ++R) {
-    for (let C of [3, 4, 5]) {
+    for (const C of [3, 4, 5]) {
       const cell = ws[XLSX.utils.encode_cell({ c: C, r: R })];
       if (cell) {
         cell.t = 'n';
@@ -278,16 +339,23 @@ function formatMatchedSheet(ws: XLSX.WorkSheet) {
   }
 }
 
-function exportToExcel(result: ReconResult) {
+function exportToExcel(result: ReconResult, exceptionFilter: ExceptionType | "ALL" = "ALL") {
   const wb = XLSX.utils.book_new();
+  const filteredExceptions =
+    exceptionFilter === "ALL"
+      ? result.exceptions
+      : result.exceptions.filter((e) => e.type === exceptionFilter);
+
   const summaryData = [
-    ["Refract — Reconciliation Report", ""],
+    ["ReconcileX — Reconciliation Report", ""],
     ["Generated", new Date().toLocaleString("en-IN")],
+    ["Exception filter", exceptionFilter === "ALL" ? "All" : (EX_META[exceptionFilter]?.label || exceptionFilter)],
     ["", ""],
     ["SUMMARY", ""],
     ["Total Orders", result.summary.totalOrders],
     ["Matched", result.summary.matchedCount],
-    ["Exceptions", result.summary.exceptionCount],
+    ["Exceptions (all)", result.summary.exceptionCount],
+    ["Exceptions (exported)", filteredExceptions.length],
     ["Auto-match Rate", `${(result.summary.autoMatchRate * 100).toFixed(1)}%`],
     ["Total Gross (₹)", result.summary.totalGrossPaise / 100],
     ["Total Fees (₹)", result.summary.totalFeesPaise / 100],
@@ -307,21 +375,24 @@ function exportToExcel(result: ReconResult) {
 
   const wsExceptions = XLSX.utils.aoa_to_sheet([
     ["Order/Ref", "Type", "Severity", "Amount (₹)", "Description"],
-    ...result.exceptions.map((e) => [e.orderNo||e.paymentId||"", EX_META[e.type]?.label||e.type, e.severity, e.amountPaise/100, e.description]),
+    ...filteredExceptions.map((e) => [e.orderNo||e.paymentId||"", EX_META[e.type]?.label||e.type, e.severity, e.amountPaise/100, e.description]),
   ]);
   formatExceptionsSheet(wsExceptions);
   autoFitColumns(wsExceptions);
-  XLSX.utils.book_append_sheet(wb, wsExceptions, "Exceptions");
+  XLSX.utils.book_append_sheet(wb, wsExceptions, exceptionFilter === "ALL" ? "Exceptions" : "Filtered Exceptions");
 
-  const wsMatched = XLSX.utils.aoa_to_sheet([
-    ["Order No","Payment ID","Match Type","Gross (₹)","Fee+Tax (₹)","Net (₹)","Settled At"],
-    ...result.matches.map((m) => [m.orderNo,m.paymentId,m.matchType,m.grossPaise/100,(m.feePaise+m.taxPaise)/100,m.netPaise/100,m.settledAt?.toLocaleDateString("en-IN")||"Pending"]),
-  ]);
-  formatMatchedSheet(wsMatched);
-  autoFitColumns(wsMatched);
-  XLSX.utils.book_append_sheet(wb, wsMatched, "Matched Orders");
+  if (exceptionFilter === "ALL") {
+    const wsMatched = XLSX.utils.aoa_to_sheet([
+      ["Order No","Payment ID","Match Type","Gross (₹)","Fee+Tax (₹)","Net (₹)","Settled At"],
+      ...result.matches.map((m) => [m.orderNo,m.paymentId,m.matchType,m.grossPaise/100,(m.feePaise+m.taxPaise)/100,m.netPaise/100,m.settledAt?.toLocaleDateString("en-IN")||"Pending"]),
+    ]);
+    formatMatchedSheet(wsMatched);
+    autoFitColumns(wsMatched);
+    XLSX.utils.book_append_sheet(wb, wsMatched, "Matched Orders");
+  }
 
-  XLSX.writeFile(wb, `refract_recon_${new Date().toISOString().split("T")[0]}.xlsx`);
+  const suffix = exceptionFilter === "ALL" ? "full" : exceptionFilter.toLowerCase();
+  XLSX.writeFile(wb, `reconcilex_recon_${suffix}_${new Date().toISOString().split("T")[0]}.xlsx`);
 }
 
 /* ── Main Results Page ───────────────────────────────────────────────────── */
@@ -333,210 +404,418 @@ export default function ResultsPage() {
   const [loading,     setLoading]     = useState(true);
   const [filter,      setFilter]      = useState<FilterType>("ALL");
   const [showMatched, setShowMatched] = useState(false);
-  const [today,       setToday]       = useState("");
+  const [today]                       = useState(() => new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
   const [showCheckout, setShowCheckout] = useState(false);
-  const [copiedUpi, setCopiedUpi]       = useState(false);
-  const [utrValue, setUtrValue]         = useState("");
-  const [checkoutStep, setCheckoutStep] = useState<"pay" | "verifying" | "submitted">("pay");
   const [isPro, setIsPro]               = useState(false);
-  const [verificationSource, setVerificationSource] = useState<"statement" | "gateway">("gateway");
-  const [showProDashboard, setShowProDashboard] = useState(false);
+  const [paymentPending, setPaymentPending] = useState(false);
   const [selectedPlan, setSelectedPlan]         = useState<"monthly" | "quarterly" | "annual">("monthly");
-  const [user, setUser]                         = useState<{ name: string; email: string; avatar: string } | null>(null);
+  const [user, setUser]                         = useState<UserSession | null>(null);
   const [showAuthModal, setShowAuthModal]       = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [billingSettings, setBillingSettings]   = useState<PublicSettings | null>(null);
+  const [missingPayload, setMissingPayload]     = useState(false);
+  const [saveMsg, setSaveMsg]                   = useState("");
+  const [savingRun, setSavingRun]               = useState(false);
+  const [workflow, setWorkflow]                 = useState<WorkflowMap>({});
+  const [selectedExId, setSelectedExId]         = useState<string | null>(null);
+  const [savedRunId, setSavedRunId]             = useState<string | null>(null);
+  const [statusFilter, setStatusFilter]         = useState<"all" | "open" | "fixed" | "ignored">("all");
+  const [explain, setExplain]                   = useState<ExceptionExplain | null>(null);
+  const [explainExId, setExplainExId]           = useState<string | null>(null);
+  const [explaining, setExplaining]             = useState(false);
+  const [alertMsg, setAlertMsg]                 = useState("");
+  const payloadRef = useRef<unknown>(null);
+  const alertedRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsPro(localStorage.getItem("refract_pro_active") === "true");
-      const stored = localStorage.getItem("refract_user");
-      if (stored) {
-        setUser(JSON.parse(stored));
-      }
-    }
-    setToday(new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
-    try {
-      const payloadRaw = sessionStorage.getItem("refract_payload");
-      if (!payloadRaw) { router.replace("/"); return; }
-      
-      const payload = JSON.parse(payloadRaw);
-      const { enabledSources, data } = payload;
-      
-      const orders: Order[] = [];
-      const payments: Payment[] = [];
-      const settlementItems: SettlementItem[] = [];
-      
-      enabledSources.forEach((src: string) => {
-        const rows = data[src] || [];
-        if (src === "shopify") {
-          orders.push(...normalizeShopify(rows));
-        } else if (src === "woocommerce") {
-          orders.push(...normalizeWooCommerce(rows));
-        } else if (src === "razorpay") {
-          const res = normalizeRazorpay(rows);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else if (src === "stripe") {
-          const res = normalizeStripe(rows);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else if (src === "cashfree") {
-          const res = normalizeCashfree(rows);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else if (src === "payu") {
-          const res = normalizePayU(rows);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else if (src === "shiprocket") {
-          const res = normalizeShiprocket(rows);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else if (src === "amazon") {
-          const res = normalizeAmazon(rows);
-          orders.push(...res.orders);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else if (src === "flipkart") {
-          const res = normalizeFlipkart(rows);
-          orders.push(...res.orders);
-          payments.push(...res.payments);
-          settlementItems.push(...res.settlementItems);
-        } else {
-          // Generic fallbacks for newly added sources
-          const platforms = ["magento", "bigcommerce", "dukaan", "fynd", "shopware", "prestashop"];
-          const gateways = ["phonepe", "paytm", "instamojo", "ccavenue", "juspay", "billdesk", "easebuzz", "pinelabs", "paypal", "gpay"];
-          const shipping = ["delhivery", "ecomexpress", "bluedart", "dtdc", "xpressbees", "shadowfax"];
-          const marketplaces = ["meesho", "myntra", "nykaa", "ajio", "jiomart", "tatacliq", "snapdeal", "firstcry", "purplle", "pepperfry", "limeroad"];
-          const banks = ["hdfc", "icici", "sbi", "axis", "kotak"];
-          const accounting = ["tally", "zohobooks", "quickbooks"];
-          const ads = ["googleads", "metaads"];
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("signed_in") || params.get("auth_error")) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("signed_in");
+          url.searchParams.delete("auth_error");
+          window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+        }
 
-          if (platforms.includes(src)) {
-            orders.push(...normalizeGenericPlatform(rows, src));
-          } else if (gateways.includes(src)) {
-            const res = normalizeGenericGateway(rows, src);
+        const session = await getUserSession();
+        if (session) {
+          setUser(session);
+          setIsPro(!!session.isPro);
+          setPaymentPending(session.paymentStatus === "pending");
+          if (session.selectedPlan) setSelectedPlan(session.selectedPlan);
+        }
+        const settings = await getPublicSettings();
+        if (settings) setBillingSettings(settings);
+        const remembered = readCheckoutPlan();
+        if (remembered) setSelectedPlan(remembered);
+        const wantCheckout = params.get("checkout") === "1";
+        if (wantCheckout) {
+          setShowCheckout(true);
+          const url = new URL(window.location.href);
+          url.searchParams.delete("checkout");
+          window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+        }
+      } catch {}
+
+      try {
+        const payloadRaw = sessionStorage.getItem("refract_payload");
+        if (!payloadRaw) {
+          setLoading(false);
+          setMissingPayload(true);
+          const remembered = readCheckoutPlan();
+          if (remembered) setSelectedPlan(remembered);
+          const params = new URLSearchParams(window.location.search);
+          if (params.get("checkout") === "1" || remembered) {
+            setShowCheckout(true);
+          }
+          return;
+        }
+        setMissingPayload(false);
+
+        const payload = JSON.parse(payloadRaw);
+        payloadRef.current = payload;
+        setWorkflow(loadLocalWorkflow());
+        const rules: MatchRules = { ...DEFAULT_MATCH_RULES };
+        const liveSettings = await getPublicSettings().catch(() => null);
+        if (liveSettings?.matchRules) {
+          Object.assign(rules, liveSettings.matchRules);
+        }
+        if (liveSettings) setBillingSettings(liveSettings);
+        const { enabledSources, data } = payload;
+        
+        const orders: Order[] = [];
+        const payments: Payment[] = [];
+        const settlementItems: SettlementItem[] = [];
+        
+        enabledSources.forEach((src: string) => {
+          const rows = data[src] || [];
+          if (src === "shopify") {
+            orders.push(...normalizeShopify(rows));
+          } else if (src === "woocommerce") {
+            orders.push(...normalizeWooCommerce(rows));
+          } else if (src === "razorpay") {
+            const res = normalizeRazorpay(rows);
             payments.push(...res.payments);
             settlementItems.push(...res.settlementItems);
-          } else if (shipping.includes(src)) {
-            const res = normalizeGenericShipping(rows, src);
+          } else if (src === "stripe") {
+            const res = normalizeStripe(rows);
             payments.push(...res.payments);
             settlementItems.push(...res.settlementItems);
-          } else if (marketplaces.includes(src)) {
-            const res = normalizeGenericMarketplace(rows, src);
+          } else if (src === "cashfree") {
+            const res = normalizeCashfree(rows);
+            payments.push(...res.payments);
+            settlementItems.push(...res.settlementItems);
+          } else if (src === "payu") {
+            const res = normalizePayU(rows);
+            payments.push(...res.payments);
+            settlementItems.push(...res.settlementItems);
+          } else if (src === "shiprocket") {
+            const res = normalizeShiprocket(rows);
+            payments.push(...res.payments);
+            settlementItems.push(...res.settlementItems);
+          } else if (src === "amazon") {
+            const res = normalizeAmazon(rows);
             orders.push(...res.orders);
             payments.push(...res.payments);
             settlementItems.push(...res.settlementItems);
-          } else if (banks.includes(src)) {
-            const res = normalizeGenericBank(rows, src);
+          } else if (src === "flipkart") {
+            const res = normalizeFlipkart(rows);
+            orders.push(...res.orders);
             payments.push(...res.payments);
             settlementItems.push(...res.settlementItems);
-          } else if (accounting.includes(src)) {
-            orders.push(...normalizeGenericAccounting(rows, src));
-          } else if (ads.includes(src)) {
-            const res = normalizeGenericAds(rows, src);
-            payments.push(...res.payments);
-            settlementItems.push(...res.settlementItems);
+          } else {
+            // Generic fallbacks for newly added sources
+            const platforms = ["magento", "bigcommerce", "dukaan", "fynd", "shopware", "prestashop"];
+            const gateways = ["phonepe", "paytm", "instamojo", "ccavenue", "juspay", "billdesk", "easebuzz", "pinelabs", "paypal", "gpay"];
+            const shipping = ["delhivery", "ecomexpress", "bluedart", "dtdc", "xpressbees", "shadowfax"];
+            const marketplaces = ["meesho", "myntra", "nykaa", "ajio", "jiomart", "tatacliq", "snapdeal", "firstcry", "purplle", "pepperfry", "limeroad"];
+            const banks = ["hdfc", "icici", "sbi", "axis", "kotak"];
+            const accounting = ["tally", "zohobooks", "quickbooks"];
+            const ads = ["googleads", "metaads"];
+
+            if (platforms.includes(src)) {
+              orders.push(...normalizeGenericPlatform(rows, src));
+            } else if (gateways.includes(src)) {
+              const res = normalizeGenericGateway(rows, src);
+              payments.push(...res.payments);
+              settlementItems.push(...res.settlementItems);
+            } else if (shipping.includes(src)) {
+              const res = normalizeGenericShipping(rows, src);
+              payments.push(...res.payments);
+              settlementItems.push(...res.settlementItems);
+            } else if (marketplaces.includes(src)) {
+              const res = normalizeGenericMarketplace(rows, src);
+              orders.push(...res.orders);
+              payments.push(...res.payments);
+              settlementItems.push(...res.settlementItems);
+            } else if (banks.includes(src)) {
+              const res = normalizeGenericBank(rows, src);
+              payments.push(...res.payments);
+              settlementItems.push(...res.settlementItems);
+            } else if (accounting.includes(src)) {
+              orders.push(...normalizeGenericAccounting(rows, src));
+            } else if (ads.includes(src)) {
+              const res = normalizeGenericAds(rows, src);
+              payments.push(...res.payments);
+              settlementItems.push(...res.settlementItems);
+            }
           }
+        });
+        
+        const recon = runRecon(orders, payments, settlementItems, { rules });
+        setResult(recon);
+        if (!alertedRef.current) {
+          alertedRef.current = true;
+          void getUserSession().then(async (session) => {
+            if (!session) return;
+            try {
+              const res = await checkRiskAlert({
+                label: "Live recon",
+                summary: {
+                  amountAtRiskPaise: recon.summary.amountAtRiskPaise,
+                  exceptionCount: recon.summary.exceptionCount,
+                },
+              });
+              if (res.alert.sent) {
+                setAlertMsg(
+                  `Risk alert sent (${res.alert.channels.join(", ")}) — threshold ₹${res.settings.thresholdInr}`
+                );
+              }
+            } catch {
+              // non-blocking
+            }
+          });
         }
-      });
-      
-      setResult(runRecon(orders, payments, settlementItems));
-    } catch { router.replace("/"); }
-    finally { setLoading(false); }
+      } catch {
+        setMissingPayload(true);
+      } finally {
+        setLoading(false);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [router]);
 
-  const displayed = useCallback(() => {
-    if (!result) return [];
-    return filter === "ALL" ? result.exceptions : result.exceptions.filter((e) => e.type === filter);
-  }, [result, filter])();
+  // Poll while UTR is under review so Pro unlocks without a full page refresh
+  useEffect(() => {
+    if (!paymentPending || isPro) return;
+    const id = window.setInterval(async () => {
+      try {
+        const session = await getUserSession();
+        if (!session) return;
+        setUser(session);
+        setIsPro(!!session.isPro);
+        setPaymentPending(session.paymentStatus === "pending");
+        if (session.selectedPlan) setSelectedPlan(session.selectedPlan);
+      } catch {
+        // ignore transient network errors
+      }
+    }, 12000);
+    return () => window.clearInterval(id);
+  }, [paymentPending, isPro]);
 
-  /* Loading */
-  if (loading) return (
-    <>
-      <div className="page-root">
-        <nav className="nav">
-          <a href="/" className="nav-logo">
-            <div className="nav-logo-mark">R</div>Refract
-          </a>
-        </nav>
-        <div className="processing-overlay">
-          <motion.div
-            animate={{ rotate: 360 }} transition={{ duration: 0.75, repeat: Infinity, ease: "linear" }}
-            style={{ border: "3px solid var(--g-border)", borderTopColor: "var(--t-hi)", borderRadius: "50%", width: 48, height: 48 }}
-          />
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-secondary">
-            Running reconciliation engine…
-          </motion.p>
+  const requestExport = (scope: "full" | "filtered" = "full") => {
+    if (!result) return;
+    if (isPro) {
+      exportToExcel(result, scope === "filtered" && filter !== "ALL" ? filter : "ALL");
+      return;
+    }
+    rememberCheckoutPlan(selectedPlan);
+    setShowCheckout(true);
+  };
+
+  const saveCurrentRun = async () => {
+    if (!result) return;
+    if (!user) {
+      setShowAuthModal(true);
+      setSaveMsg("Sign in to save this run.");
+      return;
+    }
+    setSavingRun(true);
+    setSaveMsg("");
+    try {
+      const types = Array.from(new Set(result.exceptions.map((e) => e.type))).slice(0, 40);
+      const payloadB64 = payloadRef.current ? encodePayloadB64(payloadRef.current) : "";
+      const run = await saveRun({
+        label: `Recon ${today}`,
+        summary: result.summary,
+        exceptionTypes: types,
+        workflow,
+        payloadB64: payloadB64 || undefined,
+      });
+      setSavedRunId(run.id);
+      setSaveMsg(run.hasPayload ? "Run + CSV payload saved." : "Run saved to your account.");
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : "Could not save run.");
+    } finally {
+      setSavingRun(false);
+    }
+  };
+
+  const displayed = (() => {
+    if (!result) return [];
+    let list = filter === "ALL" ? result.exceptions : result.exceptions.filter((e) => e.type === filter);
+    if (statusFilter !== "all") {
+      list = list.filter((e) => (workflow[e.id]?.status || "open") === statusFilter);
+    }
+    return list;
+  })();
+
+  const setExStatus = (id: string, status: "open" | "fixed" | "ignored" | "assigned") => {
+    setWorkflow((prev) => {
+      const next = setWorkflowEntry(prev, id, { status });
+      if (savedRunId) {
+        void updateRunWorkflow(savedRunId, next).catch(() => undefined);
+      }
+      return next;
+    });
+  };
+
+  const runExplain = async (ex: Exception) => {
+    setExplaining(true);
+    setExplainExId(ex.id);
+    setSelectedExId(ex.id);
+    try {
+      const res = await explainException({
+        id: ex.id,
+        type: ex.type,
+        severity: ex.severity,
+        amountPaise: ex.amountPaise,
+        description: ex.description,
+        orderNo: ex.orderNo,
+        paymentId: ex.paymentId,
+        settlementId: ex.settlementId,
+        diff: ex.diff,
+      });
+      setExplain(res.explain);
+    } catch (err) {
+      setExplain({
+        summary: err instanceof Error ? err.message : "Could not explain this exception.",
+        likelyCauses: [],
+        suggestedActions: [],
+        source: "rules",
+      });
+    } finally {
+      setExplaining(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!result) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const list = displayed;
+      const idx = list.findIndex((x) => x.id === selectedExId);
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = list[Math.min(list.length - 1, Math.max(0, idx + 1))];
+        if (next) setSelectedExId(next.id);
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const next = list[Math.max(0, idx <= 0 ? 0 : idx - 1)];
+        if (next) setSelectedExId(next.id);
+      } else if (e.key === "f" && selectedExId) {
+        setExStatus(selectedExId, "fixed");
+      } else if (e.key === "i" && selectedExId) {
+        setExStatus(selectedExId, "ignored");
+      } else if (e.key === "o" && selectedExId) {
+        setExStatus(selectedExId, "open");
+      } else if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        void saveCurrentRun();
+      } else if (e.key === "e" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        requestExport("full");
+      } else if (e.key >= "1" && e.key <= "6") {
+        const types: Array<FilterType> = [
+          "ALL",
+          "SETTLED_NO_ORDER",
+          "PAID_NOT_SETTLED",
+          "AMOUNT_MISMATCH",
+          "FEE_ANOMALY",
+          "SETTLEMENT_OVERDUE",
+        ];
+        const t = types[Number(e.key) - 1];
+        if (t) setFilter(t);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, displayed, selectedExId, savedRunId, workflow, user, isPro]);
+
+  if (loading) {
+    return (
+      <>
+        <div className="page-root">
+          <nav className="nav">
+            <Link href="/" className="nav-logo">
+              <div className="nav-logo-mark">RX</div>ReconcileX
+            </Link>
+          </nav>
+          <div className="processing-overlay">
+            <motion.div
+              animate={{ rotate: 360 }} transition={{ duration: 0.75, repeat: Infinity, ease: "linear" }}
+              style={{ border: "3px solid var(--g-border)", borderTopColor: "var(--t-hi)", borderRadius: "50%", width: 48, height: 48 }}
+            />
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-secondary">
+              Running reconciliation engine…
+            </motion.p>
+          </div>
         </div>
-      </div>
-    </>
-  );
+      </>
+    );
+  }
+
+  if (missingPayload) {
+    return (
+      <>
+        <div className="page-root marketing-page">
+          <nav className="nav">
+            <Link href="/" className="nav-logo">
+              <div className="nav-logo-mark">RX</div>ReconcileX
+            </Link>
+          </nav>
+          <main className="marketing-main" style={{ textAlign: "center" }}>
+            <h1 className="hero-title" style={{ fontSize: "clamp(1.6rem, 4vw, 2.4rem)" }}>
+              No reconciliation loaded
+            </h1>
+            <p className="hero-subtitle" style={{ marginBottom: 24 }}>
+              Run a recon from the home page to see matches and exceptions. You can still upgrade to Pro from pricing without a report.
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <Link href="/#tool" className="btn btn-primary">Run a recon</Link>
+              <Link href="/pricing" className="btn btn-secondary">Choose a plan</Link>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCheckout(true)}>
+                Open Pro checkout
+              </button>
+            </div>
+          </main>
+          <SiteFooter />
+        </div>
+        <CheckoutModal
+          isOpen={showCheckout}
+          onClose={() => setShowCheckout(false)}
+          initialPlan={selectedPlan}
+          returnTo="/results"
+          onSubmitted={(session) => {
+            if (session) {
+              setUser(session);
+              setIsPro(!!session.isPro);
+              setPaymentPending(session.paymentStatus === "pending");
+            }
+          }}
+        />
+        <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} returnTo="/results" />
+      </>
+    );
+  }
 
   if (!result) return null;
 
   const { summary, feeAudit } = result;
-
-  const handleVerifyUTR = () => {
-    setCheckoutStep("verifying");
-    
-    setTimeout(() => {
-      let isVerified = false;
-      let source: "statement" | "gateway" = "gateway";
-      
-      const planDetails = {
-        monthly: { amount: 499900, utr: "REFRACT_PRO_4999" },
-        quarterly: { amount: 999900, utr: "REFRACT_PRO_9999" },
-        annual: { amount: 2999900, utr: "REFRACT_PRO_29999" }
-      };
-      const currentDetails = planDetails[selectedPlan];
-      
-      try {
-        const payloadRaw = sessionStorage.getItem("refract_payload");
-        if (payloadRaw) {
-          const { enabledSources, data } = JSON.parse(payloadRaw);
-          const bankSources = ["hdfc", "icici", "sbi", "axis", "kotak"];
-          
-          for (const src of enabledSources) {
-            if (bankSources.includes(src)) {
-              const rows = data[src] || [];
-              for (const row of rows) {
-                const r: Record<string, string> = {};
-                for (const k of Object.keys(row)) {
-                  r[k.trim().toLowerCase().replace(/\s+/g, "_")] = (row[k] || "").trim();
-                }
-                const refNo = r["reference_number"] || r["ref_no"] || r["cheque_ref_no"] || r["description"] || "";
-                const depositStr = r["deposit"] || r["credit"] || r["amount"] || r["transaction_amount"] || "0";
-                const depositPaise = Math.round(parseFloat(depositStr.replace(/[₹,\s]/g, "")) * 100);
-                
-                // Check if UTR is in reference number and amount matches target plan's amount in paise
-                if (refNo.toLowerCase().includes(utrValue.toLowerCase().trim()) && depositPaise === currentDetails.amount) {
-                  isVerified = true;
-                  source = "statement";
-                  break;
-                }
-              }
-            }
-            if (isVerified) break;
-          }
-        }
-      } catch (e) {
-        console.error("UTR verification error", e);
-      }
-      
-      setVerificationSource(source);
-      setIsPro(true);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("refract_pro_active", "true");
-      }
-      setCheckoutStep("submitted");
-    }, 2000);
-  };
-
-  const exByType = Object.entries(EX_META).map(([type, meta]) => ({
-    type: type as ExceptionType, ...meta,
-    count: result.exceptions.filter((e) => e.type === type).length,
-  }));
 
   const pageVariants = {
     hidden:  { opacity: 0 },
@@ -558,9 +837,9 @@ export default function ResultsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.16,1,0.3,1] }}
         >
-          <a href="/" className="nav-logo">
-            <div className="nav-logo-mark">R</div>
-            Refract
+          <Link href="/" className="nav-logo">
+            <div className="nav-logo-mark">RX</div>
+            ReconcileX
             {isPro && (
               <span className="pro-badge" style={{
                 fontSize: "9px",
@@ -579,9 +858,10 @@ export default function ResultsPage() {
                 Pro
               </span>
             )}
-          </a>
+          </Link>
           <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center", position: "relative" }}>
             <span className="text-muted" style={{ fontSize: 12.5 }}>{today}</span>
+            {saveMsg && <span className="text-muted" style={{ fontSize: 12 }}>{saveMsg}</span>}
             <ThemeToggle />
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
               className="btn btn-secondary btn-sm" onClick={() => router.push("/")} id="new-recon-btn"
@@ -591,11 +871,18 @@ export default function ResultsPage() {
               <span>New Recon</span>
             </motion.button>
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-              className="btn btn-primary btn-sm" onClick={() => exportToExcel(result)} id="export-excel-btn"
+              className="btn btn-secondary btn-sm" onClick={() => void saveCurrentRun()}
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              disabled={savingRun}
+            >
+              <span>{savingRun ? "Saving…" : "Save run"}</span>
+            </motion.button>
+            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+              className="btn btn-primary btn-sm" onClick={() => requestExport("full")} id="export-excel-btn"
               style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
             >
               <GlassIcon icon={Download} variant="dark" size="sm" style={{ width: 20, height: 20, borderRadius: 4 }} />
-              <span>Export Excel</span>
+              <span>{isPro ? "Export Excel" : "Export (Pro)"}</span>
             </motion.button>
 
             {user ? (
@@ -671,9 +958,11 @@ export default function ResultsPage() {
                           </div>
                         </div>
                         <button
-                          onClick={() => {
-                            localStorage.removeItem("refract_user");
+                          onClick={async () => {
+                            await signOutUser();
                             setUser(null);
+                            setIsPro(false);
+                            setPaymentPending(false);
                             setShowUserDropdown(false);
                           }}
                           style={{
@@ -830,7 +1119,84 @@ export default function ResultsPage() {
                     );
                   })}
                 </div>
+                <div className="filter-tabs" style={{ marginTop: 8 }}>
+                  {(["all", "open", "fixed", "ignored"] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`filter-tab ${statusFilter === st ? "active" : ""}`}
+                      onClick={() => setStatusFilter(st)}
+                    >
+                      {st === "all" ? "Any status" : st}
+                    </button>
+                  ))}
+                  <span className="text-muted results-shortcut-hint" style={{ fontSize: 12, alignSelf: "center", marginLeft: 8 }}>
+                    Keys: j/k select · f fixed · i ignore · o open · ⌘S save
+                  </span>
+                </div>
               </div>
+
+              {filter !== "ALL" && EXCEPTION_NEXT_STEPS[filter] && (
+                <div className="feature-card" style={{ marginBottom: 14 }}>
+                  <h3 style={{ marginTop: 0 }}>{EXCEPTION_NEXT_STEPS[filter].title}</h3>
+                  <ol style={{ margin: "8px 0 0", paddingLeft: 18, color: "var(--t-mid)", fontSize: 13.5, lineHeight: 1.55 }}>
+                    {EXCEPTION_NEXT_STEPS[filter].steps.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginTop: 12 }}
+                    onClick={() => requestExport("filtered")}
+                  >
+                    {isPro ? "Export this filter to Excel" : "Unlock filtered Excel export"}
+                  </button>
+                </div>
+              )}
+
+              {alertMsg && (
+                <div className="feature-card" style={{ marginBottom: 12 }}>
+                  {alertMsg}
+                </div>
+              )}
+
+              {explain && (
+                <div className="feature-card explain-panel" style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
+                    <h3 style={{ marginTop: 0 }}>
+                      Why this broke{" "}
+                      <span style={{ fontSize: 12, color: "var(--t-dim)", fontWeight: 500 }}>
+                        ({explain.source === "ai" ? "AI" : "rules"})
+                      </span>
+                    </h3>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setExplain(null)}>
+                      Close
+                    </button>
+                  </div>
+                  <p style={{ marginTop: 0 }}>{explain.summary}</p>
+                  {explain.likelyCauses?.length > 0 && (
+                    <>
+                      <strong style={{ fontSize: 13 }}>Likely causes</strong>
+                      <ul style={{ marginTop: 6, fontSize: 13.5, color: "var(--t-mid)" }}>
+                        {explain.likelyCauses.map((c) => (
+                          <li key={c}>{c}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {explain.suggestedActions?.length > 0 && (
+                    <>
+                      <strong style={{ fontSize: 13 }}>Suggested actions</strong>
+                      <ul style={{ marginTop: 6, fontSize: 13.5, color: "var(--t-mid)" }}>
+                        {explain.suggestedActions.map((c) => (
+                          <li key={c}>{c}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
 
               {displayed.length === 0 ? (
                 <motion.div
@@ -846,12 +1212,24 @@ export default function ResultsPage() {
                     <thead>
                       <tr>
                         <th>Order / Ref</th><th>Exception Type</th>
-                        <th>Severity</th><th>Amount</th><th>Description</th>
+                        <th>Severity</th><th>Amount</th><th>Description</th><th>Status</th><th>AI</th>
                       </tr>
                     </thead>
                     <AnimatePresence mode="popLayout">
                       <tbody>
-                        {displayed.map((ex, i) => <ExceptionRow key={ex.id} ex={ex} index={i} />)}
+                        {displayed.map((ex, i) => (
+                          <ExceptionRow
+                            key={ex.id}
+                            ex={ex}
+                            index={i}
+                            selected={selectedExId === ex.id}
+                            workflow={workflow[ex.id]}
+                            onStatus={setExStatus}
+                            onSelect={setSelectedExId}
+                            onExplain={(row) => void runExplain(row)}
+                            explaining={explaining && explainExId === ex.id}
+                          />
+                        ))}
                       </tbody>
                     </AnimatePresence>
                   </table>
@@ -925,61 +1303,26 @@ export default function ResultsPage() {
               {isPro ? (
                 <>
                   <h3 style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "var(--sp-2)", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
-                    Refract Pro is Active! ✨
+                    ReconcileX Pro is active
                   </h3>
                   <p className="text-secondary" style={{ fontSize: 14, marginBottom: "var(--sp-5)", maxWidth: 460, margin: "0 auto var(--sp-5)" }}>
-                    Your automated daily reconciliation pipeline is live. Shopify API & Razorpay webhooks are synced.
+                    Your account has Pro access. Plan:{" "}
+                    <strong style={{ color: "var(--t-hi)" }}>
+                      {user?.selectedPlan || "Pro"}
+                    </strong>
+                    {user?.utrValue ? (
+                      <> · UTR <strong style={{ color: "var(--t-hi)" }}>{user.utrValue}</strong></>
+                    ) : null}
                   </p>
-                  <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
-                    maxWidth: "340px",
-                    margin: "0 auto var(--sp-6)",
-                    background: "rgba(255,255,255,0.02)",
-                    border: "1px solid rgba(255,255,255,0.04)",
-                    borderRadius: "12px",
-                    padding: "12px 16px",
-                    textAlign: "left"
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                      <span style={{ color: "var(--t-mid)" }}>Active Plan:</span>
-                      <span style={{ color: "var(--t-hi)", fontWeight: 700 }}>Refract Enterprise Pro</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                      <span style={{ color: "var(--t-mid)" }}>API Sync Status:</span>
-                      <span style={{ color: "var(--green)", fontWeight: 700 }}>● Connected</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                      <span style={{ color: "var(--t-mid)" }}>Next Sync:</span>
-                      <span style={{ color: "var(--t-hi)", fontWeight: 600 }}>Tomorrow, 09:00 AM</span>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "var(--sp-3)", justifyContent: "center", flexWrap: "wrap" }}>
-                    <motion.button
-                      className="btn btn-primary"
-                      whileHover={{ scale: 1.04 }}
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => setShowProDashboard(true)}
-                      style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
-                    >
-                      <span>Manage Pro Dashboard</span>
-                    </motion.button>
-                    <motion.button
-                      className="btn btn-secondary"
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => {
-                        setIsPro(false);
-                        if (typeof window !== "undefined") {
-                          localStorage.removeItem("refract_pro_active");
-                        }
-                      }}
-                      style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
-                    >
-                      <span>Reset Pro (Demo)</span>
-                    </motion.button>
-                  </div>
+                </>
+              ) : paymentPending ? (
+                <>
+                  <h3 style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "var(--sp-2)", letterSpacing: "-0.03em" }}>
+                    Payment under review
+                  </h3>
+                  <p className="text-secondary" style={{ fontSize: 14, marginBottom: "var(--sp-6)", maxWidth: 460, margin: "0 auto var(--sp-6)" }}>
+                    Your UTR was submitted. An admin will verify the payment and activate Pro on your account.
+                  </p>
                 </>
               ) : (
                 <>
@@ -987,8 +1330,7 @@ export default function ResultsPage() {
                     Want this automatically, every day?
                   </h3>
                   <p className="text-secondary" style={{ fontSize: 14, marginBottom: "var(--sp-6)", maxWidth: 460, margin: "0 auto var(--sp-6)" }}>
-                    Connect your sales integration API keys and e-commerce stores — fresh reconciliation, daily digest,
-                    no manual CSV exports.
+                    Unlock Pro for full Excel exports and priority support — pay via UPI and an admin activates your account.
                   </p>
 
                   {/* Modern Flat Plan Selector */}
@@ -1001,15 +1343,38 @@ export default function ResultsPage() {
                     flexWrap: "wrap"
                   }}>
                     {[
-                      { id: "monthly", label: "Monthly", price: "₹4,999/mo", detail: "Billed Monthly", savings: "" },
-                      { id: "quarterly", label: "Quarterly", price: "₹3,333/mo", detail: "₹9,999/quarter", savings: "Save 33%" },
-                      { id: "annual", label: "Annual Plan", price: "₹2,499/mo", detail: "₹29,999/year", savings: "Save 50%" }
+                      {
+                        id: "monthly",
+                        label: "Monthly",
+                        price: `₹${(billingSettings?.plans?.monthly?.amount ?? 4999).toLocaleString("en-IN")}/mo`,
+                        detail: "Billed Monthly",
+                        savings: "",
+                      },
+                      {
+                        id: "quarterly",
+                        label: "Quarterly",
+                        price: `₹${(billingSettings?.plans?.quarterly?.amount ?? 9999).toLocaleString("en-IN")}/qtr`,
+                        detail: "Billed Quarterly",
+                        savings: "Save more",
+                      },
+                      {
+                        id: "annual",
+                        label: "Annual Plan",
+                        price: `₹${(billingSettings?.plans?.annual?.amount ?? 29999).toLocaleString("en-IN")}/yr`,
+                        detail: "Billed Yearly",
+                        savings: "Best value",
+                      },
                     ].map((plan) => {
                       const isSelected = selectedPlan === plan.id;
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={plan.id}
-                          onClick={() => setSelectedPlan(plan.id as any)}
+                          onClick={() => {
+                            const id = plan.id as PlanId;
+                            setSelectedPlan(id);
+                            rememberCheckoutPlan(id);
+                          }}
                           style={{
                             flex: "1 1 160px",
                             background: isSelected ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
@@ -1049,7 +1414,7 @@ export default function ResultsPage() {
                           <div style={{ fontSize: "11px", color: "var(--t-dim)", marginTop: "2px" }}>
                             {plan.detail}
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -1061,29 +1426,30 @@ export default function ResultsPage() {
                       whileTap={{ scale: 0.96 }}
                       id="get-started-btn"
                       onClick={() => {
-                        setCheckoutStep("pay");
-                        setUtrValue("");
+                        rememberCheckoutPlan(selectedPlan);
                         setShowCheckout(true);
                       }}
                       style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
                     >
                       <GlassIcon icon={Sparkles} variant="dark" size="sm" />
                       <span>
-                        {selectedPlan === "monthly" ? "Get Started — ₹4,999/month" :
-                         selectedPlan === "quarterly" ? "Get Started — ₹9,999/quarter" :
-                         "Get Started — ₹29,999/year"}
+                        {selectedPlan === "monthly"
+                          ? `Get Started — ₹${(billingSettings?.plans?.monthly?.amount ?? 4999).toLocaleString("en-IN")}/month`
+                          : selectedPlan === "quarterly"
+                            ? `Get Started — ₹${(billingSettings?.plans?.quarterly?.amount ?? 9999).toLocaleString("en-IN")}/quarter`
+                            : `Get Started — ₹${(billingSettings?.plans?.annual?.amount ?? 29999).toLocaleString("en-IN")}/year`}
                       </span>
                     </motion.button>
                     <motion.button
                       className="btn btn-secondary"
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.96 }}
-                      onClick={() => exportToExcel(result)}
+                      onClick={() => requestExport("full")}
                       id="bottom-export-btn"
                       style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}
                     >
                       <GlassIcon icon={Download} variant="dim" size="sm" style={{ width: 20, height: 20, borderRadius: 4 }} />
-                      <span>Download this report</span>
+                      <span>{isPro ? "Download this report" : "Unlock Excel export"}</span>
                     </motion.button>
                   </div>
                 </>
@@ -1093,429 +1459,25 @@ export default function ResultsPage() {
           </motion.div>
         </main>
 
-        <footer className="footer">
-          <strong>Refract</strong> · All computation runs in your browser. No data sent to our servers.
-        </footer>
+        <SiteFooter />
       </div>
 
-      {/* Checkout Modal */}
-      <AnimatePresence>
-        {showCheckout && (
-          <div
-            className="checkout-modal-overlay"
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0, 0, 0, 0.4)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              zIndex: 1000,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "20px"
-            }}
-            onClick={() => setShowCheckout(false)}
-          >
-            <motion.div
-              className="checkout-modal-card"
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-              style={{
-                background: "var(--g-bg-card)",
-                border: "1px solid var(--g-border)",
-                borderRadius: "20px",
-                boxShadow: "var(--s-glass)",
-                width: "100%",
-                maxWidth: "460px",
-                padding: "24px",
-                position: "relative",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center"
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Close Button */}
-              <button
-                onClick={() => setShowCheckout(false)}
-                style={{
-                  position: "absolute",
-                  top: "16px",
-                  right: "16px",
-                  background: "rgba(255,255,255,0.06)",
-                  border: "none",
-                  borderRadius: "50%",
-                  width: "28px",
-                  height: "28px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  color: "var(--t-hi)",
-                  transition: "background 0.2s"
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-              >
-                <X size={15} />
-              </button>
-
-              {checkoutStep === "pay" ? (
-                <>
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "8px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
-                    Activate Refract Pro ({selectedPlan === "monthly" ? "Monthly" : selectedPlan === "quarterly" ? "Quarterly" : "Annual"})
-                  </h3>
-                  <p style={{ fontSize: "13px", color: "var(--t-mid)", textAlign: "center", marginBottom: "20px", maxWidth: "340px" }}>
-                    Scan the Paytm QR to complete the subscription of <strong style={{ color: "var(--t-hi)" }}>
-                      {selectedPlan === "monthly" ? "₹4,999/month" :
-                       selectedPlan === "quarterly" ? "₹9,999/quarter" :
-                       "₹29,999/year"}
-                    </strong>.
-                  </p>
-
-                  {/* QR Code Container */}
-                  <div style={{
-                    width: 200,
-                    height: 350,
-                    overflow: "hidden",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    background: "#fff",
-                    boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
-                    marginBottom: "16px",
-                    position: "relative"
-                  }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/paytm_qr.jpg"
-                      alt="Paytm QR Code"
-                      style={{
-                        width: 350,
-                        height: 200,
-                        transform: "rotate(90deg)",
-                        objectFit: "contain"
-                      }}
-                    />
-                  </div>
-
-                  {/* Account Info */}
-                  <div style={{
-                    width: "100%",
-                    background: "rgba(255, 255, 255, 0.03)",
-                    border: "1px solid rgba(255, 255, 255, 0.05)",
-                    borderRadius: "10px",
-                    padding: "10px 14px",
-                    marginBottom: "16px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "4px"
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                      <span style={{ color: "var(--t-mid)" }}>Account:</span>
-                      <span style={{ color: "var(--t-hi)", fontWeight: 700 }}>Thalamati Udaykumar</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                      <span style={{ color: "var(--t-mid)" }}>UPI ID:</span>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span style={{ color: "var(--t-hi)", fontFamily: "monospace", fontSize: "11px" }}>paytmqr281005...</span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText("paytmqr28100505050101fi5qu5@paytm");
-                            setCopiedUpi(true);
-                            setTimeout(() => setCopiedUpi(false), 2000);
-                          }}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            color: copiedUpi ? "var(--green)" : "var(--t-mid)",
-                            display: "flex",
-                            alignItems: "center"
-                          }}
-                        >
-                          {copiedUpi ? <Check size={12} /> : <Copy size={12} />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* UTR Input Form */}
-                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <label style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-mid)" }}>
-                      UPI Ref / UTR Number
-                    </label>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <input
-                        type="text"
-                        placeholder="Enter 12-digit UTR number"
-                        value={utrValue}
-                        onChange={(e) => setUtrValue(e.target.value)}
-                        style={{
-                          flex: 1,
-                          background: "rgba(255, 255, 255, 0.04)",
-                          border: "1px solid rgba(255, 255, 255, 0.08)",
-                          borderRadius: "8px",
-                          padding: "10px 14px",
-                          color: "var(--t-hi)",
-                          fontSize: "13px",
-                          outline: "none",
-                          fontFamily: "inherit"
-                        }}
-                      />
-                      <button
-                        className="btn btn-primary"
-                        disabled={!utrValue.trim()}
-                        onClick={handleVerifyUTR}
-                        style={{
-                          padding: "0 18px",
-                          borderRadius: "8px",
-                          fontSize: "13px"
-                        }}
-                      >
-                        Submit
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : checkoutStep === "verifying" ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "40px 0" }}>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                    style={{ display: "inline-block", marginBottom: "20px" }}
-                  >
-                    <RotateCw size={36} style={{ color: "var(--yellow)" }} />
-                  </motion.div>
-                  <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "8px", color: "var(--t-hi)" }}>
-                    Verifying Transaction...
-                  </h3>
-                  <p style={{ fontSize: "13px", color: "var(--t-mid)", maxWidth: "280px" }}>
-                    Matching UTR <code style={{ color: "var(--t-hi)", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>{utrValue}</code> against our bank statement records and UPI APIs.
-                  </p>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "10px 0" }}>
-                  <div style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "50%",
-                    background: "rgba(52, 211, 153, 0.1)",
-                    border: "1px solid rgba(52, 211, 153, 0.2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: "16px"
-                  }}>
-                    <CheckCircle size={24} color="var(--green)" />
-                  </div>
-                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "8px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
-                    Subscription Active! 🎉
-                  </h3>
-                  {verificationSource === "statement" ? (
-                    <p style={{ fontSize: "13px", color: "var(--t-mid)", lineHeight: 1.5, marginBottom: "20px", maxWidth: "340px" }}>
-                      Verified against your uploaded bank statement! We successfully matched UTR <strong style={{ color: "var(--t-hi)" }}>{utrValue}</strong> to a credit transaction of <strong style={{ color: "var(--t-hi)" }}>₹4,999.00</strong>. Pro features activated.
-                    </p>
-                  ) : (
-                    <p style={{ fontSize: "13px", color: "var(--t-mid)", lineHeight: 1.5, marginBottom: "20px", maxWidth: "340px" }}>
-                      Transaction UTR <strong style={{ color: "var(--t-hi)" }}>{utrValue}</strong> has been logged. verified successfully via UPI gateway! Pro features activated.
-                    </p>
-                  )}
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => setShowCheckout(false)}
-                    style={{ width: "100%", padding: "10px 0", borderRadius: "8px" }}
-                  >
-                    Done
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Pro Dashboard Modal */}
-      <AnimatePresence>
-        {showProDashboard && (
-          <div
-            className="pro-dashboard-overlay"
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0, 0, 0, 0.4)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              zIndex: 1000,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "20px"
-            }}
-            onClick={() => setShowProDashboard(false)}
-          >
-            <motion.div
-              className="pro-dashboard-card"
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-              style={{
-                background: "var(--g-bg-card)",
-                border: "1px solid var(--g-border)",
-                borderRadius: "20px",
-                boxShadow: "var(--s-glass)",
-                width: "100%",
-                maxWidth: "500px",
-                padding: "24px",
-                position: "relative",
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px"
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Close Button */}
-              <button
-                onClick={() => setShowProDashboard(false)}
-                style={{
-                  position: "absolute",
-                  top: "16px",
-                  right: "16px",
-                  background: "rgba(255,255,255,0.06)",
-                  border: "none",
-                  borderRadius: "50%",
-                  width: "28px",
-                  height: "28px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  color: "var(--t-hi)",
-                  transition: "background 0.2s"
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.12)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-              >
-                <X size={15} />
-              </button>
-
-              <div>
-                <h3 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: "4px", letterSpacing: "-0.03em", color: "var(--t-hi)" }}>
-                  Refract Pro Dashboard
-                </h3>
-                <p style={{ fontSize: "13px", color: "var(--t-mid)" }}>
-                  Monitor and manage your automated reconciliation integrations.
-                </p>
-              </div>
-
-              {/* Status Section */}
-              <div style={{
-                background: "rgba(255, 255, 255, 0.02)",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
-                borderRadius: "12px",
-                padding: "14px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px"
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "var(--t-mid)" }}>Recon Pipeline Status:</span>
-                  <span style={{ color: "var(--green)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--green)", display: "inline-block" }}></span>
-                    Healthy & Active
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "var(--t-mid)" }}>Automation Schedule:</span>
-                  <span style={{ color: "var(--t-hi)", fontWeight: 600 }}>Daily at 09:00 AM (IST)</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px" }}>
-                  <span style={{ color: "var(--t-mid)" }}>Verification Type:</span>
-                  <span style={{ color: "var(--t-hi)", textTransform: "capitalize" }}>{verificationSource} Statement Verified</span>
-                </div>
-              </div>
-
-              {/* API Integrations */}
-              <div>
-                <h4 style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-mid)", marginBottom: "8px" }}>
-                  Connected E-Commerce APIs
-                </h4>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {[
-                    { name: "Shopify API Connector", status: "Active & Synced", desc: "Order details pull endpoint" },
-                    { name: "Razorpay Webhook Listener", status: "Active & Listening", desc: "Settlement trigger webhook" },
-                    { name: "HDFC Statement SFTP Feed", status: "Active & Connected", desc: "Daily bank ledger feed" }
-                  ].map((api, idx) => (
-                    <div key={idx} style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      background: "rgba(255,255,255,0.01)",
-                      border: "1px solid rgba(255,255,255,0.03)",
-                      borderRadius: "8px",
-                      padding: "8px 12px"
-                    }}>
-                      <div>
-                        <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--t-hi)" }}>{api.name}</div>
-                        <div style={{ fontSize: "11px", color: "var(--t-dim)" }}>{api.desc}</div>
-                      </div>
-                      <span style={{ fontSize: "11px", color: "var(--green)", fontWeight: 600 }}>{api.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Automation Logs */}
-              <div>
-                <h4 style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--t-mid)", marginBottom: "8px" }}>
-                  Recent Automation Logs
-                </h4>
-                <div style={{
-                  maxHeight: "100px",
-                  overflowY: "auto",
-                  background: "rgba(0,0,0,0.1)",
-                  border: "1px solid rgba(255,255,255,0.04)",
-                  borderRadius: "8px",
-                  padding: "8px 12px",
-                  fontFamily: "monospace",
-                  fontSize: "11px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "6px",
-                  color: "var(--t-mid)"
-                }}>
-                  <div>[2026-07-19 09:00:01] - Shopify orders loaded: 11 transactions.</div>
-                  <div>[2026-07-19 09:00:02] - Razorpay payouts synced: 11 matches, 2 exceptions.</div>
-                  <div>[2026-07-19 09:00:03] - Excel report refract_recon_2026-07-19.xlsx auto-archived.</div>
-                  <div>[2026-07-18 09:00:01] - Scheduled run: 15 orders processed. Auto-matched 100%.</div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => setShowProDashboard(false)}
-                  style={{ flex: 1, padding: "10px 0", borderRadius: "8px", fontSize: "13px" }}
-                >
-                  Done
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onSuccess={(loggedUser) => setUser(loggedUser)}
+      <CheckoutModal
+        isOpen={showCheckout}
+        onClose={() => setShowCheckout(false)}
+        initialPlan={selectedPlan}
+        returnTo="/results"
+        onSubmitted={(session) => {
+          if (session) {
+            setUser(session);
+            setIsPro(!!session.isPro);
+            setPaymentPending(session.paymentStatus === "pending");
+            if (session.selectedPlan) setSelectedPlan(session.selectedPlan);
+          }
+        }}
       />
+
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} returnTo="/results" />
     </>
   );
 }

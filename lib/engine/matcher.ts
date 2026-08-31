@@ -10,10 +10,24 @@ import type {
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
-const SETTLEMENT_WINDOW_DAYS = 5; // T+5 = overdue
-const AMOUNT_TOLERANCE_PAISE = 100; // ±₹1 for fuzzy match
+export type MatchRules = {
+  settlementWindowDays: number;
+  amountTolerancePaise: number;
+  feePct: number;
+  feeAnomalyFactor: number;
+  fuzzyWindowDays: number;
+};
+
+export const DEFAULT_MATCH_RULES: MatchRules = {
+  settlementWindowDays: 5,
+  amountTolerancePaise: 100,
+  feePct: 0.02,
+  feeAnomalyFactor: 1.05,
+  fuzzyWindowDays: 3,
+};
+
 const MS_PER_DAY = 86_400_000;
-const DEFAULT_FEE_PCT = 0.02; // 2% default contracted rate
+const DEFAULT_FEE_PCT = DEFAULT_MATCH_RULES.feePct;
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -164,7 +178,8 @@ function stepOrderIdJoin(
 function step2RefAmountWindow(
   orders: Order[],
   payments: Payment[],
-  settlementItems: SettlementItem[]
+  settlementItems: SettlementItem[],
+  rules: MatchRules
 ): {
   matches: Match[];
   unmatchedOrders: Order[];
@@ -186,8 +201,8 @@ function step2RefAmountWindow(
     const candidates = payments.filter((p) => {
       const amountClose =
         Math.abs(p.amountPaise - order.grossAmountPaise) <=
-        AMOUNT_TOLERANCE_PAISE;
-      const timeClose = withinWindow(p.capturedAt, order.placedAt, 3); // 72h
+        rules.amountTolerancePaise;
+      const timeClose = withinWindow(p.capturedAt, order.placedAt, rules.fuzzyWindowDays);
       return amountClose && timeClose;
     });
 
@@ -231,7 +246,8 @@ function generateExceptions(
   unmatchedOrders: Order[],
   unmatchedPayments: Payment[],
   unmatchedSettlements: SettlementItem[],
-  now: Date
+  now: Date,
+  rules: MatchRules
 ): Exception[] {
   const exceptions: Exception[] = [];
   const severityMap: Record<ExceptionType, Exception["severity"]> = {
@@ -263,7 +279,7 @@ function generateExceptions(
       continue;
     const daysSince = daysBetween(order.placedAt, now);
     const type: ExceptionType =
-      daysSince > SETTLEMENT_WINDOW_DAYS
+      daysSince > rules.settlementWindowDays
         ? "SETTLEMENT_OVERDUE"
         : "PAID_NOT_SETTLED";
     exceptions.push({
@@ -283,7 +299,7 @@ function generateExceptions(
   // 3. Amount mismatch in matched records
   for (const match of allMatches) {
     const diff = Math.abs(match.grossPaise - match.netPaise - match.feePaise - match.taxPaise);
-    if (diff > AMOUNT_TOLERANCE_PAISE) {
+    if (diff > rules.amountTolerancePaise) {
       exceptions.push({
         id: uid("ex"),
         type: "AMOUNT_MISMATCH",
@@ -298,11 +314,11 @@ function generateExceptions(
     }
   }
 
-  // 4. Fee anomaly — charged > expected by >5%
+  // 4. Fee anomaly — charged > expected by factor
   for (const match of allMatches) {
-    const expectedFee = Math.round(match.grossPaise * DEFAULT_FEE_PCT);
+    const expectedFee = Math.round(match.grossPaise * rules.feePct);
     const chargedFee = match.feePaise;
-    if (chargedFee > expectedFee * 1.05) {
+    if (chargedFee > expectedFee * rules.feeAnomalyFactor) {
       const overcharge = chargedFee - expectedFee;
       exceptions.push({
         id: uid("ex"),
@@ -316,6 +332,20 @@ function generateExceptions(
         diff: overcharge,
       });
     }
+  }
+
+  // 5. Refund settlement lines without matching payment context
+  for (const si of unmatchedSettlements) {
+    if (si.type !== "REFUND") continue;
+    exceptions.push({
+      id: uid("ex"),
+      type: "REFUND_MISMATCH",
+      severity: severityMap["REFUND_MISMATCH"],
+      amountPaise: Math.abs(si.grossPaise),
+      description: `Refund settlement ₹${(Math.abs(si.grossPaise) / 100).toLocaleString("en-IN")} (${si.settlementId}) has no matching order/payment`,
+      settlementId: si.settlementId,
+      paymentId: si.paymentId || undefined,
+    });
   }
 
   return exceptions;
@@ -346,10 +376,14 @@ export function runRecon(
   orders: Order[],
   payments: Payment[],
   settlementItems: SettlementItem[],
-  options: { contractedFeePct?: number } = {}
+  options: { contractedFeePct?: number; rules?: Partial<MatchRules> } = {}
 ): ReconResult {
   _idCounter = 0; // reset for determinism
   const now = new Date();
+  const rules: MatchRules = { ...DEFAULT_MATCH_RULES, ...(options.rules || {}) };
+  if (options.contractedFeePct != null) {
+    rules.feePct = options.contractedFeePct;
+  }
 
   // Step 1: ID join
   const step1 = step1IdJoin(orders, payments, settlementItems);
@@ -367,7 +401,8 @@ export function runRecon(
   const step2 = step2RefAmountWindow(
     step1_5.unmatchedOrders,
     step1_5.unmatchedPayments,
-    step1_5.unmatchedSettlements
+    step1_5.unmatchedSettlements,
+    rules
   );
   allMatches.push(...step2.matches);
 
@@ -377,10 +412,11 @@ export function runRecon(
     step2.unmatchedOrders,
     step2.unmatchedPayments,
     step2.unmatchedSettlements,
-    now
+    now,
+    rules
   );
 
-  const feeAudit = computeFeeAudit(allMatches, options.contractedFeePct);
+  const feeAudit = computeFeeAudit(allMatches, rules.feePct);
 
   const totalGross = allMatches.reduce((s, m) => s + m.grossPaise, 0);
   const totalFees = allMatches.reduce((s, m) => s + m.feePaise + m.taxPaise, 0);

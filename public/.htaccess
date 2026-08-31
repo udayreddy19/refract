@@ -1,0 +1,79 @@
+# Apache / LiteSpeed configuration for ReconcileX on ServerByt / Shared Hosting
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Force HTTPS — uncomment after Let's Encrypt is valid for reconcilex.in:
+  # RewriteCond %{HTTPS} !=on
+  # RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # Block direct access to CRM data directory
+  RewriteRule ^data(/|$) - [F,L]
+
+  # Prefer static HTML over same-named directories (Next export creates both)
+  RewriteRule ^results/?$ results.html [L]
+  RewriteRule ^pricing/?$ pricing.html [L]
+  RewriteRule ^privacy/?$ privacy.html [L]
+  RewriteRule ^terms/?$ terms.html [L]
+  RewriteRule ^contact/?$ contact.html [L]
+  RewriteRule ^account/?$ account.html [L]
+  RewriteRule ^connections/?$ connections.html [L]
+  RewriteRule ^status/?$ status.html [L]
+  RewriteRule ^admin/?$ admin.html [L]
+  RewriteRule ^admin/users/?$ admin/users.html [L]
+  RewriteRule ^admin/payments/?$ admin/payments.html [L]
+  RewriteRule ^admin/settings/?$ admin/settings.html [L]
+  RewriteRule ^admin/audit/?$ admin/audit.html [L]
+  RewriteRule ^admin/analytics/?$ admin/analytics.html [L]
+  RewriteRule ^admin/control/?$ admin/control.html [L]
+  RewriteRule ^changelog/?$ changelog.html [L]
+
+  RewriteCond %{REQUEST_FILENAME}.html -f
+  RewriteRule ^([^/]+)/?$ $1.html [L]
+
+  # Clean URLs for exported HTML pages
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^([^/]+)/?$ $1.html [L]
+
+  # Nested admin clean URLs
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{DOCUMENT_ROOT}/$1/$2.html -f
+  RewriteRule ^([^/]+)/([^/]+)/?$ $1/$2.html [L]
+
+  # SPA fallback (do not rewrite existing PHP / files)
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^(.*)$ index.html [L]
+</IfModule>
+
+DirectorySlash Off
+
+# Security headers
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "max-age=0, no-cache, no-store, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$">
+    Header set Cache-Control "max-age=31536000, public, immutable"
+  </FilesMatch>
+</IfModule>
+
+# Block direct HTTP access to secrets
+<Files "secrets.php">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</Files>

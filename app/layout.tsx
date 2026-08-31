@@ -1,14 +1,41 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Refract — Razorpay × Shopify Reconciliation",
+  metadataBase: new URL("https://reconcilex.in"),
+  title: "ReconcileX — E-commerce Payment & Payout Reconciliation",
   description:
-    "Upload your Razorpay settlement and Shopify order exports. Every order matched to every settlement, every fee verified, every mismatch flagged — in minutes.",
-  keywords: ["razorpay reconciliation", "shopify settlement recon", "payment reconciliation", "D2C finance"],
+    "Match every order to every payout, audit gateway fees, verify marketplace settlements, and recover revenue leaks automatically. Zero data sent to external servers.",
+  keywords: [
+    "ReconcileX",
+    "e-commerce reconciliation",
+    "razorpay reconciliation",
+    "shopify settlement recon",
+    "payment reconciliation",
+    "D2C finance",
+    "reconcilex.in",
+  ],
+  openGraph: {
+    title: "ReconcileX — E-commerce Payment & Payout Reconciliation",
+    description:
+      "Match every order to every payout, audit gateway fees, and recover revenue leaks. Data stays in your browser.",
+    url: "https://reconcilex.in",
+    siteName: "ReconcileX",
+    type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "ReconcileX" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ReconcileX",
+    description: "E-commerce payment & payout reconciliation for D2C brands.",
+    images: ["/og.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
-
-import Script from "next/script";
 
 export default function RootLayout({
   children,
@@ -30,15 +57,13 @@ export default function RootLayout({
         </Script>
       </head>
       <body>
-        {/* Liquid glass ambient background with floating orbs */}
-        <div className="ambient-bg">
+        <div className="ambient-bg" aria-hidden="true">
           <div className="orb orb-1" />
           <div className="orb orb-2" />
           <div className="orb orb-3" />
           <div className="orb orb-4" />
         </div>
-        {/* Page content */}
-        <div className="page-root">{children}</div>
+        {children}
       </body>
     </html>
   );

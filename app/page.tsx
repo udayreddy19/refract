@@ -8,21 +8,49 @@ import {
   AnimatePresence,
   useMotionValue,
   useSpring,
-  useTransform,
 } from "framer-motion";
 import GlassIcon from "@/components/GlassIcon";
 
-import { Check, X, CreditCard, ShoppingBag, Zap, CheckCircle, AlertTriangle, Percent, FileSpreadsheet, Truck, Store, Smartphone, Globe, Package, Landmark, BookOpen, Megaphone, Wallet, BarChart3, ChevronDown, LogOut } from "lucide-react";
-import ThemeToggle from "@/components/ThemeToggle";
+import {
+  Check,
+  X,
+  CreditCard,
+  ShoppingBag,
+  Zap,
+  CheckCircle,
+  AlertTriangle,
+  Percent,
+  FileSpreadsheet,
+  Truck,
+  Store,
+  Smartphone,
+  Globe,
+  Package,
+  Landmark,
+  BookOpen,
+  Megaphone,
+  Wallet,
+  BarChart3,
+  type LucideIcon,
+} from "lucide-react";
 import AuthModal from "@/components/AuthModal";
+import SiteNav from "@/components/SiteNav";
+import SiteFooter from "@/components/SiteFooter";
+import ColumnMapper from "@/components/ColumnMapper";
 import {
   getUserSession,
-  signOutUser,
-  onAuthStateChanged,
-  getAuthInstance,
-  isFirebaseConfigured,
   type UserSession,
 } from "@/lib/auth";
+import {
+  loadChannelPreset,
+  saveChannelPreset,
+  loadColumnMap,
+  saveColumnMap,
+  EXPECTED_FIELDS,
+  autoMapHeaders,
+  applyColumnMap,
+  missingExpected,
+} from "@/lib/presets";
 
 /* ── variants ──────────────────────────────────────────────────────────── */
 
@@ -36,26 +64,6 @@ const fadeUp = {
 
 const stagger = {
   visible: { transition: { staggerChildren: 0.08 } },
-};
-
-const cardVariant = {
-  hidden:  { opacity: 0, y: 28, scale: 0.97 },
-  visible: (i = 0) => ({
-    opacity: 1, y: 0, scale: 1,
-    transition: { delay: i * 0.1, type: "spring" as const, stiffness: 260, damping: 22 },
-  }),
-};
-
-const pulseGlow = {
-  initial: { boxShadow: "0 2px 12px rgba(0,0,0,0.50), 0 1px 0 rgba(255,255,255,0.30) inset" },
-  animate: {
-    boxShadow: [
-      "0 2px 12px rgba(0,0,0,0.50), 0 1px 0 rgba(255,255,255,0.30) inset",
-      "0 4px 24px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.40) inset",
-      "0 2px 12px rgba(0,0,0,0.50), 0 1px 0 rgba(255,255,255,0.30) inset",
-    ],
-    transition: { duration: 3.2, repeat: Infinity, ease: "easeInOut" as const },
-  },
 };
 
 /* ── Magnetic button (follows cursor) ─────────────────────────────────── */
@@ -100,48 +108,6 @@ function MagneticButton({ children, className, disabled, onClick, id }: {
   );
 }
 
-/* ── Tilt card (3D on hover) ───────────────────────────────────────────── */
-function TiltCard({ children, className, style, onClick, custom }: {
-  children: React.ReactNode;
-  className?: string;
-  style?: React.CSSProperties;
-  onClick?: () => void;
-  custom?: number;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const rotateX = useMotionValue(0);
-  const rotateY = useMotionValue(0);
-  const srx = useSpring(rotateX, { stiffness: 180, damping: 20 });
-  const sry = useSpring(rotateY, { stiffness: 180, damping: 20 });
-
-  const handleMove = (e: React.MouseEvent) => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const px = (e.clientX - rect.left) / rect.width - 0.5;
-    const py = (e.clientY - rect.top) / rect.height - 0.5;
-    rotateX.set(-py * 10);
-    rotateY.set(px * 10);
-  };
-
-  const handleLeave = () => { rotateX.set(0); rotateY.set(0); };
-
-  return (
-    <motion.div
-      ref={ref}
-      className={className}
-      style={{ ...style, rotateX: srx, rotateY: sry, transformStyle: "preserve-3d" }}
-      variants={cardVariant}
-      custom={custom}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      onClick={onClick}
-      whileHover={{ scale: 1.02, transition: { type: "spring", stiffness: 300, damping: 22 } }}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
 type SourceType =
   /* Platforms */
   | "shopify" | "woocommerce" | "magento" | "bigcommerce" | "dukaan" | "fynd" | "shopware" | "prestashop"
@@ -167,7 +133,7 @@ type FileState = {
 const SOURCE_META: Record<SourceType, {
   label: string;
   category: "platform" | "gateway" | "shipping" | "marketplace" | "bank" | "accounting" | "ads";
-  icon: any;
+  icon: LucideIcon;
   hint: string;
   variant: "default" | "green" | "red" | "yellow" | "blue" | "dim" | "dark";
 }> = {
@@ -267,7 +233,17 @@ type CategoryKey = typeof CATEGORIES[number]["key"];
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 export default function HomePage() {
   const router = useRouter();
-  const [enabledSources, setEnabledSources] = useState<SourceType[]>(["shopify", "razorpay"]);
+  const [enabledSources, setEnabledSources] = useState<SourceType[]>(() =>
+    loadChannelPreset<SourceType>([])
+  );
+  const [mapper, setMapper] = useState<null | {
+    target: SourceType;
+    file: File;
+    headers: string[];
+    rows: Record<string, string>[];
+    expected: string[];
+    initialMap: Record<string, string>;
+  }>(null);
   const [files, setFiles] = useState<Record<SourceType, FileState>>(initFileState);
   const [dragging, setDragging] = useState<Record<SourceType, boolean>>(initDragState);
   const [activeCategory, setActiveCategory] = useState<CategoryKey>("platform");
@@ -277,42 +253,58 @@ export default function HomePage() {
 
   const [user, setUser] = useState<UserSession | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [pendingRecon, setPendingRecon] = useState(false);
 
-  // Listen for Firebase auth state changes (handles login, logout, and page refresh persistence)
   useEffect(() => {
-    const authInstance = getAuthInstance();
-    if (isFirebaseConfigured && authInstance) {
-      const unsubscribe = onAuthStateChanged(authInstance, async (firebaseUser) => {
-        if (firebaseUser) {
-          const session = await getUserSession();
-          setUser(session);
-        } else {
-          setUser(null);
-        }
-      });
-      return () => unsubscribe();
-    } else {
-      // Fallback: load from localStorage when Firebase is not configured
-      if (typeof window !== "undefined") {
-        const stored = localStorage.getItem("refract_user");
-        if (stored) {
-          setUser(JSON.parse(stored));
-        }
-      }
-    }
-  }, []);
+    saveChannelPreset(enabledSources);
+  }, [enabledSources]);
 
-  const handleAuthSuccess = (loggedUser: UserSession) => {
-    setUser(loggedUser);
-  };
+  // Restore session from ServerByt PHP cookie; resume recon after Google OAuth
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSession = async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const authError = params.get("auth_error");
+        const signedIn = params.get("signed_in");
+
+        if (authError || signedIn) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("auth_error");
+          url.searchParams.delete("signed_in");
+          window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+        }
+
+        if (authError) {
+          setError(decodeURIComponent(authError));
+        }
+
+        const session = await getUserSession();
+        if (cancelled) return;
+        setUser(session);
+
+        if (signedIn && session && sessionStorage.getItem("refract_pending_recon") === "1") {
+          sessionStorage.removeItem("refract_pending_recon");
+          if (sessionStorage.getItem("refract_payload")) {
+            router.push("/results");
+          }
+        }
+      } catch {
+        if (!cancelled) setUser(null);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      void loadSession();
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [router]);
 
   /* Dynamic ref map — one ref per source, created on demand */
   const inputRefs = useRef<Map<SourceType, HTMLInputElement | null>>(new Map());
-  const getRef = (source: SourceType) => ({
-    current: inputRefs.current.get(source) ?? null,
-  });
   const setInputRef = (source: SourceType) => (el: HTMLInputElement | null) => {
     inputRefs.current.set(source, el);
   };
@@ -338,16 +330,31 @@ export default function HomePage() {
       })
     );
 
+  const commitRows = useCallback((target: SourceType, file: File, rows: Record<string, string>[]) => {
+    setFiles((f) => ({ ...f, [target]: { file, rows, name: file.name } }));
+  }, []);
+
   const handleFile = useCallback(async (file: File, target: SourceType) => {
     if (!file.name.endsWith(".csv")) { setError("Please upload a CSV file."); return; }
     setError(null);
     try {
       const rows = await parseCSV(file);
-      setFiles((f) => ({ ...f, [target]: { file, rows, name: file.name } }));
+      const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+      const expected = EXPECTED_FIELDS[SOURCE_META[target].category] || EXPECTED_FIELDS.gateway;
+      const saved = loadColumnMap(target);
+      const auto = saved || autoMapHeaders(headers, expected);
+      const missing = missingExpected(auto, expected, 2);
+      if (missing.length > 0 && headers.length > 0) {
+        setMapper({ target, file, headers, rows, expected, initialMap: auto });
+        return;
+      }
+      const mapped = Object.keys(auto).length ? applyColumnMap(rows, auto) : rows;
+      if (Object.keys(auto).length) saveColumnMap(target, auto);
+      commitRows(target, file, mapped);
     } catch {
       setError(`Failed to parse ${file.name}`);
     }
-  }, []);
+  }, [commitRows]);
 
   const handleDrop = useCallback((e: React.DragEvent, target: SourceType) => {
     e.preventDefault();
@@ -399,9 +406,9 @@ export default function HomePage() {
       return [
         ["Date", "Description", "Reference Number", "Amount", "Deposit", "Credit"],
         ["2026-07-16 15:00:00", `SETTLEMENT FROM GATEWAY`, `UTR_RAZORPAY_99`, "10250.20", "10250.20", "10250.20"],
-        ["2026-07-16 16:30:00", `UPI PAYMENT RECEIVED`, `REFRACT_PRO_4999`, "4999.00", "4999.00", "4999.00"],
-        ["2026-07-16 16:35:00", `UPI PAYMENT RECEIVED`, `REFRACT_PRO_9999`, "9999.00", "9999.00", "9999.00"],
-        ["2026-07-16 16:40:00", `UPI PAYMENT RECEIVED`, `REFRACT_PRO_29999`, "29999.00", "29999.00", "29999.00"]
+        ["2026-07-16 16:30:00", `UPI PAYMENT RECEIVED`, `RECONCILEX_PRO_4999`, "4999.00", "4999.00", "4999.00"],
+        ["2026-07-16 16:35:00", `UPI PAYMENT RECEIVED`, `RECONCILEX_PRO_9999`, "9999.00", "9999.00", "9999.00"],
+        ["2026-07-16 16:40:00", `UPI PAYMENT RECEIVED`, `RECONCILEX_PRO_29999`, "29999.00", "29999.00", "29999.00"]
       ].map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
     }
 
@@ -444,25 +451,19 @@ export default function HomePage() {
     }
   };
 
-  useEffect(() => {
-    if (user && pendingRecon) {
-      setPendingRecon(false);
-      handleRunRecon();
-    }
-  }, [user, pendingRecon]);
-
-  const handleRunRecon = async () => {
-    if (!user) {
-      setPendingRecon(true);
-      setShowAuthModal(true);
+  const handleRunRecon = useCallback(async (currentUser?: UserSession | null) => {
+    const activeUser = currentUser !== undefined ? currentUser : user;
+    if (enabledSources.length === 0) {
+      setError("Please select at least one data channel above to run reconciliation.");
       return;
     }
     const hasData = enabledSources.every((src) => files[src].rows.length > 0);
     if (!hasData) {
-      setError("Please upload all enabled files to run reconciliation.");
+      setError("Please upload files for all selected data channels to run reconciliation.");
       return;
     }
-    setProcessing(true); setError(null);
+
+    // Persist payload before auth redirect so OAuth return can open /results
     try {
       const payload = {
         enabledSources,
@@ -472,14 +473,24 @@ export default function HomePage() {
         }, {} as Record<SourceType, Record<string, string>[]>)
       };
       sessionStorage.setItem("refract_payload", JSON.stringify(payload));
-      router.push("/results");
     } catch {
       setError("Data size limit exceeded. Please upload smaller exports.");
-      setProcessing(false);
+      return;
     }
-  };
 
-  const allLoaded = enabledSources.every((src) => files[src].rows.length > 0);
+    if (!activeUser) {
+      sessionStorage.setItem("refract_pending_recon", "1");
+      setShowAuthModal(true);
+      return;
+    }
+
+    setProcessing(true);
+    setError(null);
+    sessionStorage.removeItem("refract_pending_recon");
+    router.push("/results");
+  }, [user, enabledSources, files, router]);
+
+  const allLoaded = enabledSources.length > 0 && enabledSources.every((src) => files[src].rows.length > 0);
 
   const features = [
     { icon: CheckCircle, label: "Matched orders",   desc: "Multi-source matching engine linking channels", variant: "green" as const },
@@ -491,145 +502,12 @@ export default function HomePage() {
   return (
     <>
       <div className="page-root">
-        {/* ── Nav ─────────────────────────────────────────────────────────── */}
-        <motion.nav
-          className="nav"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <a href="/" className="nav-logo">
-            <motion.div
-              className="nav-logo-mark"
-              variants={pulseGlow}
-              initial="initial"
-              animate="animate"
-            >
-              R
-            </motion.div>
-            Refract
-          </a>
-          <div style={{ display: "flex", gap: "var(--sp-3)", alignItems: "center", position: "relative" }}>
-            <span className="nav-badge">CSV Recon</span>
-            <ThemeToggle />
-            {user ? (
-              <div style={{ position: "relative" }}>
-                <button
-                  onClick={() => setShowUserDropdown(!showUserDropdown)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: "20px",
-                    padding: "4px 8px 4px 4px",
-                    cursor: "pointer",
-                    color: "var(--t-hi)"
-                  }}
-                  id="user-menu-btn"
-                >
-                  <div style={{
-                    width: "24px",
-                    height: "24px",
-                    borderRadius: "50%",
-                    background: "var(--yellow)",
-                    color: "#1e1b4b",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 700,
-                    fontSize: "11px"
-                  }}>
-                    {user.avatar}
-                  </div>
-                  <span style={{ fontSize: "12.5px", fontWeight: 600 }}>{user.name.split(" ")[0]}</span>
-                  <ChevronDown size={13} style={{ color: "var(--t-dim)" }} />
-                </button>
-
-                <AnimatePresence>
-                  {showUserDropdown && (
-                    <>
-                      {/* Invisible backdrop click handler */}
-                      <div
-                        onClick={() => setShowUserDropdown(false)}
-                        style={{ position: "fixed", inset: 0, zIndex: 90 }}
-                      />
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                        transition={{ duration: 0.2 }}
-                        style={{
-                          position: "absolute",
-                          top: "36px",
-                          right: 0,
-                          background: "var(--g-bg-card)",
-                          border: "1px solid var(--g-border)",
-                          borderRadius: "12px",
-                          boxShadow: "var(--s-glass)",
-                          width: "200px",
-                          padding: "8px",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "4px",
-                          zIndex: 100
-                        }}
-                      >
-                        <div style={{ padding: "6px 8px", borderBottom: "1px solid rgba(255,255,255,0.05)", marginBottom: "4px" }}>
-                          <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--t-hi)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {user.name}
-                          </div>
-                          <div style={{ fontSize: "10.5px", color: "var(--t-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {user.email}
-                          </div>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            await signOutUser();
-                            setUser(null);
-                            setShowUserDropdown(false);
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            width: "100%",
-                            background: "none",
-                            border: "none",
-                            borderRadius: "6px",
-                            padding: "8px",
-                            textAlign: "left",
-                            cursor: "pointer",
-                            color: "#ef4444",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            transition: "background 0.2s"
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.08)"}
-                          onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-                        >
-                          <LogOut size={14} />
-                          <span>Sign Out</span>
-                        </button>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            ) : (
-              <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowAuthModal(true)}
-                id="sign-in-btn"
-              >
-                Sign In
-              </motion.button>
-            )}
-          </div>
-        </motion.nav>
+        <SiteNav
+          returnTo="/"
+          user={user}
+          onUserChange={setUser}
+          onRequestSignIn={() => setShowAuthModal(true)}
+        />
 
         {/* ── Hero ─────────────────────────────────────────────────────────── */}
         <section className="hero">
@@ -651,14 +529,20 @@ export default function HomePage() {
             </motion.h1>
 
             <motion.p variants={fadeUp} custom={2} className="hero-subtitle">
-              Configure your sales channels, gateways, and logistics to run a unified,
-              automated multi-way reconciliation in under 30 seconds.
+              Match orders, payouts, and settlements from Shopify, Razorpay, Amazon, and 50+ channels —
+              in your browser, in under 30 seconds.
             </motion.p>
+
+            <motion.div variants={fadeUp} custom={3} className="hero-cta-row">
+              <a href="#tool" className="btn btn-primary">Run free recon</a>
+              <a href="#walkthrough" className="btn btn-secondary">See how it works</a>
+              <a href="/pricing" className="btn btn-secondary">View pricing</a>
+            </motion.div>
           </motion.div>
         </section>
 
         {/* ── Upload Section ────────────────────────────────────────────────── */}
-        <main className="page-wrapper">
+        <main id="tool" className="page-wrapper">
           <div style={{ maxWidth: 740, margin: "0 auto" }}>
 
             {/* Source Configuration Grid */}
@@ -678,7 +562,6 @@ export default function HomePage() {
                 {CATEGORIES.map((cat) => {
                   const CatIcon = cat.icon;
                   const isActive = activeCategory === cat.key;
-                  const count = Object.values(SOURCE_META).filter(m => m.category === cat.key).length;
                   const enabledCount = enabledSources.filter(s => SOURCE_META[s].category === cat.key).length;
                   return (
                     <motion.button
@@ -749,74 +632,93 @@ export default function HomePage() {
               animate="visible"
               variants={stagger}
             >
-              {enabledSources.map((target) => {
-                const state = files[target];
-                const drag = dragging[target];
-                const meta = SOURCE_META[target];
-                const loaded = state.rows.length > 0;
+              {enabledSources.length === 0 ? (
+                <div
+                  style={{
+                    padding: "36px 20px",
+                    textAlign: "center",
+                    borderRadius: "var(--r-lg)",
+                    border: "1px dashed var(--b-line)",
+                    background: "var(--bg-glass)",
+                    color: "var(--t-dim)",
+                    fontSize: 13.5,
+                  }}
+                >
+                  <p style={{ margin: 0, fontWeight: 500 }}>
+                    No channels selected yet. Click any channel above to enable and upload your exports.
+                  </p>
+                </div>
+              ) : (
+                enabledSources.map((target) => {
+                  const state = files[target];
+                  const drag = dragging[target];
+                  const meta = SOURCE_META[target];
+                  const loaded = state.rows.length > 0;
 
-                return (
-                  <div
-                    key={target}
-                    className={`compact-upload-row ${drag ? "dragging" : ""} ${loaded ? "loaded" : ""}`}
-                    onClick={() => {
-                      if (!loaded) inputRefs.current.get(target)?.click();
-                    }}
-                    onDragOver={(e) => { e.preventDefault(); setDragging((d) => ({ ...d, [target]: true })); }}
-                    onDragLeave={() => setDragging((d) => ({ ...d, [target]: false }))}
-                    onDrop={(e) => handleDrop(e, target)}
-                  >
-                    <input
-                      ref={setInputRef(target)}
-                      type="file"
-                      accept=".csv"
-                      style={{ display: "none" }}
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, target); }}
-                      id={`${target}-input`}
-                    />
-
-                    <div className="compact-row-left">
-                      <GlassIcon
-                        icon={loaded ? Check : meta.icon}
-                        variant={loaded ? "green" : meta.variant}
-                        size="sm"
-                        style={{ borderRadius: 6 }}
+                  return (
+                    <div
+                      key={target}
+                      className={`compact-upload-row ${drag ? "dragging" : ""} ${loaded ? "loaded" : ""}`}
+                      onClick={() => {
+                        if (!loaded) inputRefs.current.get(target)?.click();
+                      }}
+                      onDragOver={(e) => { e.preventDefault(); setDragging((d) => ({ ...d, [target]: true })); }}
+                      onDragLeave={() => setDragging((d) => ({ ...d, [target]: false }))}
+                      onDrop={(e) => handleDrop(e, target)}
+                    >
+                      <input
+                        ref={setInputRef(target)}
+                        type="file"
+                        accept=".csv"
+                        style={{ display: "none" }}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, target); }}
+                        id={`${target}-input`}
                       />
-                      <div className="compact-row-info">
-                        <div className="compact-row-title">{meta.label}</div>
+
+                      <div className="compact-row-left">
+                        <GlassIcon
+                          icon={loaded ? Check : meta.icon}
+                          variant={loaded ? "green" : meta.variant}
+                          size="sm"
+                          style={{ borderRadius: 6 }}
+                        />
+                        <div className="compact-row-info">
+                          <div className="compact-row-title">{meta.label}</div>
+                          {loaded ? (
+                            <div className="compact-row-desc success">
+                              ✓ {state.name} · {state.rows.length} rows loaded
+                            </div>
+                          ) : (
+                            <div className="compact-row-desc">
+                              Drag & drop or click to upload CSV
+                              <div className="upload-hint">{meta.hint}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         {loaded ? (
-                          <div className="compact-row-desc success">
-                            ✓ {state.name} · {state.rows.length} rows loaded
-                          </div>
+                          <button
+                            className="btn-compact-clear"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFiles((f) => ({ ...f, [target]: { file: null, rows: [], name: "" } }));
+                            }}
+                            title="Clear file"
+                          >
+                            <X size={12} strokeWidth={2.5} />
+                          </button>
                         ) : (
-                          <div className="compact-row-desc">
-                            Drag & drop or click to upload CSV
-                          </div>
+                          <span className="text-accent" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                            Browse
+                          </span>
                         )}
                       </div>
                     </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      {loaded ? (
-                        <button
-                          className="btn-compact-clear"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFiles((f) => ({ ...f, [target]: { file: null, rows: [], name: "" } }));
-                          }}
-                          title="Clear file"
-                        >
-                          <X size={12} strokeWidth={2.5} />
-                        </button>
-                      ) : (
-                        <span className="text-accent" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                          Browse
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </motion.div>
 
             {/* Error */}
@@ -839,7 +741,7 @@ export default function HomePage() {
                     textAlign: "center",
                   }}
                 >
-                  ⚠️ {error}
+                  {error}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -888,7 +790,9 @@ export default function HomePage() {
                     className="text-muted"
                     style={{ fontSize: 13 }}
                   >
-                    Upload files for all active data channels to continue
+                    {enabledSources.length === 0
+                      ? "Select data channels above to get started"
+                      : "Upload files for all active data channels to continue"}
                   </motion.p>
                 )}
               </AnimatePresence>
@@ -902,11 +806,44 @@ export default function HomePage() {
               transition={{ delay: 0.55 }}
               style={{ marginTop: "var(--sp-6)" }}
             >
-              <span className="text-muted" style={{ fontSize: 13 }}>No files yet? Try sample data:</span>
+              <button
+                type="button"
+                className="sample-link"
+                onClick={() => {
+                  saveChannelPreset(enabledSources);
+                  setError(null);
+                }}
+              >
+                Save channel preset
+              </button>
+              <span className="text-muted" style={{ fontSize: 13 }}>· No files yet? Try sample data:</span>
+              <button
+                className="sample-link"
+                style={{ fontWeight: 700, color: "var(--t-hi)" }}
+                onClick={async () => {
+                  setError(null);
+                  const demoSources = ["shopify", "razorpay"] as SourceType[];
+                  setEnabledSources(demoSources);
+                  for (const src of demoSources) {
+                    await loadSample(src);
+                  }
+                  // Ensure payload and go
+                  setTimeout(() => {
+                    const btn = document.getElementById("run-recon-btn") as HTMLButtonElement | null;
+                    btn?.click();
+                  }, 400);
+                }}
+              >
+                ▶ One-click demo recon
+              </button>
               <button
                 className="sample-link"
                 style={{ fontWeight: 650, color: "var(--t-hi)" }}
                 onClick={async () => {
+                  if (enabledSources.length === 0) {
+                    setError("Please select at least one channel above first, or use One-click demo recon.");
+                    return;
+                  }
                   for (const src of enabledSources) {
                     await loadSample(src);
                   }
@@ -925,7 +862,7 @@ export default function HomePage() {
               </a>
             </motion.div>
 
-            {/* Simplified Feature Row */}
+            {/* Compact feature badges */}
             <div style={{ display: "flex", justifyContent: "center" }}>
               <motion.div
                 className="compact-features-row"
@@ -945,17 +882,149 @@ export default function HomePage() {
           </div>
         </main>
 
-        <footer className="footer">
-          <strong>Refract</strong> · Recon-as-a-Service for D2C brands ·{" "}
-          <span className="text-accent">Data never leaves your browser</span>
-        </footer>
+        <section id="walkthrough" className="home-section">
+          <div className="home-section-head">
+            <h2>30-second walkthrough</h2>
+            <p>A guided loop you can follow without leaving the page.</p>
+          </div>
+          <div className="walkthrough-track">
+            {[
+              { t: "Pick channels", d: "Enable Shopify + Razorpay (or your stack) from the category tabs." },
+              { t: "Drop CSVs", d: "Upload exports — we hint the menu path and map columns if headers differ." },
+              { t: "Run recon", d: "Sign in once, then match orders to payouts entirely in your browser." },
+              { t: "Fix exceptions", d: "Use next-step guidance per mismatch type, then export Excel on Pro." },
+            ].map((s, i) => (
+              <div key={s.t} className="walkthrough-step">
+                <div className="step-num">{i + 1}</div>
+                <h3>{s.t}</h3>
+                <p>{s.d}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="social-proof" className="home-section">
+          <div className="home-section-head">
+            <h2>Built for D2C finance teams</h2>
+            <p>What operators say they need — and what ReconcileX delivers.</p>
+          </div>
+          <div className="testimonials-grid">
+            <blockquote className="testimonial-card">
+              <p>“We were reconciling Shopify and Razorpay in sheets every week. Browser matching cut that to minutes.”</p>
+              <footer>— D2C brand finance lead</footer>
+            </blockquote>
+            <blockquote className="testimonial-card">
+              <p>“Fee anomalies finally show up without a separate MDR tracker. Export goes straight to our CA.”</p>
+              <footer>— Marketplace seller ops</footer>
+            </blockquote>
+            <blockquote className="testimonial-card">
+              <p>“CSVs never leave the laptop for matching. That was the requirement from our security checklist.”</p>
+              <footer>— Founder, multi-channel store</footer>
+            </blockquote>
+          </div>
+          <p className="home-section-head" style={{ marginTop: 18, marginBottom: 0 }}>
+            <span style={{ color: "var(--t-dim)", fontSize: 13 }}>Used with exports from Shopify · Razorpay · Amazon · Shiprocket · WooCommerce · Stripe</span>
+          </p>
+        </section>
+
+        <section id="how-it-works" className="home-section">
+          <div className="home-section-head">
+            <h2>How it works</h2>
+            <p>Three steps from export to a clean reconciliation report.</p>
+          </div>
+          <div className="steps-grid">
+            <div className="step-card">
+              <div className="step-num">1</div>
+              <h3>Export your CSVs</h3>
+              <p>Pull orders, settlements, and remittances from your store, gateway, marketplace, or bank.</p>
+            </div>
+            <div className="step-card">
+              <div className="step-num">2</div>
+              <h3>Match in the browser</h3>
+              <p>ReconcileX links channels locally — file contents are not uploaded for matching.</p>
+            </div>
+            <div className="step-card">
+              <div className="step-num">3</div>
+              <h3>Review &amp; export</h3>
+              <p>Inspect exceptions on screen. Pro unlocks the full multi-sheet Excel workbook.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="features" className="home-section">
+          <div className="home-section-head">
+            <h2>Built for D2C finance ops</h2>
+            <p>Everything you need to close settlement cycles without spreadsheet chaos.</p>
+          </div>
+          <div className="features-grid">
+            {features.map((f) => (
+              <div key={f.label} className="feature-card">
+                <GlassIcon icon={f.icon} variant={f.variant} size="sm" style={{ borderRadius: 8, marginBottom: 12 }} />
+                <h3>{f.label}</h3>
+                <p>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="pricing" className="home-section">
+          <div className="home-section-head">
+            <h2>Free to run. Pro to export.</h2>
+            <p>Reconcile anytime on Free. Upgrade when you need full Excel exports and priority support.</p>
+          </div>
+          <div className="home-pricing-cta">
+            <a href="/pricing" className="btn btn-primary">See plans &amp; pricing</a>
+          </div>
+        </section>
+
+        <section id="faq" className="home-section" style={{ paddingBottom: 24 }}>
+          <div className="home-section-head">
+            <h2>FAQ</h2>
+            <p>Straight answers before you upload a ledger.</p>
+          </div>
+          <div className="faq-list">
+            <div className="faq-item">
+              <h3>Does my CSV leave the browser?</h3>
+              <p>Matching runs client-side. We only store account details for Google sign-in and UTR payment verification.</p>
+            </div>
+            <div className="faq-item">
+              <h3>What do I get on Free vs Pro?</h3>
+              <p>Free includes unlimited on-screen recon runs. Pro unlocks the full Excel export after UPI payment is verified by an admin.</p>
+            </div>
+            <div className="faq-item">
+              <h3>Which files do you support?</h3>
+              <p>CSV exports from major platforms, gateways, marketplaces, shipping remittances, banks, and accounting tools. Use sample data to try instantly.</p>
+            </div>
+            <div className="faq-item">
+              <h3>How does Pro payment work?</h3>
+              <p>Pay via UPI from checkout, submit your UTR, and an admin activates Pro on your account — usually after verifying the reference.</p>
+            </div>
+          </div>
+        </section>
+
+        <SiteFooter />
       </div>
 
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        onSuccess={handleAuthSuccess}
+        returnTo="/"
       />
+
+      {mapper && (
+        <ColumnMapper
+          sourceLabel={SOURCE_META[mapper.target].label}
+          csvHeaders={mapper.headers}
+          expected={mapper.expected}
+          initialMap={mapper.initialMap}
+          onCancel={() => setMapper(null)}
+          onApply={(map) => {
+            saveColumnMap(mapper.target, map);
+            commitRows(mapper.target, mapper.file, applyColumnMap(mapper.rows, map));
+            setMapper(null);
+          }}
+        />
+      )}
     </>
   );
 }

@@ -1,23 +1,3 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import {
-  getAuth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  type ConfirmationResult,
-  type Auth,
-} from "firebase/auth";
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-} from "firebase/firestore";
-
 export interface UserSession {
   uid: string;
   name: string;
@@ -25,453 +5,524 @@ export interface UserSession {
   avatar: string;
   isPro?: boolean;
   selectedPlan?: "monthly" | "quarterly" | "annual";
-  verificationSource?: "statement" | "gateway";
   utrValue?: string;
+  photoURL?: string | null;
+  paymentStatus?: "pending" | "approved" | null;
+  reminderHour?: number;
+  teamName?: string;
+  teamId?: string | null;
+  teamRole?: string | null;
+  proExpiresAt?: string | null;
+  autoRenew?: boolean;
+  proViaTeam?: boolean;
+  connections?: Array<{
+    provider: string;
+    label?: string;
+    status?: string;
+    notes?: string;
+  }>;
+  pendingPayment?: {
+    id: string;
+    plan: string;
+    utr: string;
+    status: string;
+    amount?: number;
+  } | null;
 }
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-export const isFirebaseConfigured =
-  typeof window !== "undefined" &&
-  !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
-  process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== "undefined" &&
-  process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== "";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let app: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let auth: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let db: any;
-
-if (isFirebaseConfigured) {
-  try {
-    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    console.log("Refract is running in Firebase Cloud Mode.");
-  } catch (e) {
-    console.error("Failed to initialize Firebase SDK", e);
-  }
-} else {
-  if (typeof window !== "undefined") {
-    console.warn("Firebase credentials missing. Running in local demo mode (localStorage).");
-  }
-}
-
-// Helper to get initials
-const getInitials = (name: string) => {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase() || "U";
-};
-
-// 1. Get current user session
-export const getUserSession = async (): Promise<UserSession | null> => {
-  if (isFirebaseConfigured && auth) {
-    const firebaseUser = auth.currentUser;
-    if (!firebaseUser) return null;
-
-    try {
-      const userRef = doc(db, "users", firebaseUser.uid);
-      const userDoc = await getDoc(userRef);
-      if (userDoc.exists()) {
-        return { uid: firebaseUser.uid, ...userDoc.data() } as UserSession;
-      }
-    } catch (e) {
-      console.error("Error fetching Firebase user session", e);
-    }
-  }
-
-  // Fallback
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("refract_user");
-    return stored ? JSON.parse(stored) : null;
-  }
-  return null;
-};
-
-// 2. Sign Up with Email/Password
-export const signUpWithEmail = async (email: string, password: string, name: string): Promise<UserSession> => {
-  const initials = getInitials(name);
-
-  if (isFirebaseConfigured && auth && db) {
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    const userSession: UserSession = {
-      uid: credential.user.uid,
-      name,
-      email: email.toLowerCase(),
-      avatar: initials,
-      isPro: false,
-    };
-    
-    // Store in Firestore
-    await setDoc(doc(db, "users", credential.user.uid), {
-      name: userSession.name,
-      email: userSession.email,
-      avatar: userSession.avatar,
-      isPro: false,
-    });
-
-    return userSession;
-  }
-
-  // Fallback
-  if (typeof window !== "undefined") {
-    const usersRaw = localStorage.getItem("refract_users");
-    const users = usersRaw ? JSON.parse(usersRaw) : [];
-    
-    const exists = users.some((u: any) => u.email.toLowerCase() === email.toLowerCase());
-    if (exists) throw new Error("An account with this email already exists.");
-
-    const newUser = {
-      uid: "mock_" + Math.random().toString(36).substr(2, 9),
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      password: password.trim(),
-      avatar: initials,
-      isPro: false,
-    };
-
-    users.push(newUser);
-    localStorage.setItem("refract_users", JSON.stringify(users));
-
-    const loggedUser: UserSession = {
-      uid: newUser.uid,
-      name: newUser.name,
-      email: newUser.email,
-      avatar: newUser.avatar,
-      isPro: false,
-    };
-    localStorage.setItem("refract_user", JSON.stringify(loggedUser));
-    return loggedUser;
-  }
-  
-  throw new Error("No client storage available.");
-};
-
-// 3. Sign In with Email/Password
-export const signInWithEmail = async (email: string, password: string): Promise<UserSession> => {
-  if (isFirebaseConfigured && auth && db) {
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-    const userRef = doc(db, "users", credential.user.uid);
-    const userDoc = await getDoc(userRef);
-    
-    if (userDoc.exists()) {
-      return { uid: credential.user.uid, ...userDoc.data() } as UserSession;
-    }
-    
-    throw new Error("User document not found in database.");
-  }
-
-  // Fallback
-  if (typeof window !== "undefined") {
-    const usersRaw = localStorage.getItem("refract_users");
-    const users = usersRaw ? JSON.parse(usersRaw) : [];
-    
-    const foundUser = users.find(
-      (u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
-
-    if (!foundUser) throw new Error("Invalid email or password.");
-
-    const loggedUser: UserSession = {
-      uid: foundUser.uid,
-      name: foundUser.name,
-      email: foundUser.email,
-      avatar: foundUser.avatar,
-      isPro: foundUser.isPro || false,
-      selectedPlan: foundUser.selectedPlan,
-      verificationSource: foundUser.verificationSource,
-      utrValue: foundUser.utrValue,
-    };
-    localStorage.setItem("refract_user", JSON.stringify(loggedUser));
-    return loggedUser;
-  }
-
-  throw new Error("No client storage available.");
-};
-
-// 4. Phone & Email OTP Authentication Helpers
-
-export interface EmailOTPSession {
-  email: string;
-  expectedOtp: string;
-}
-
-export const sendPhoneOTP = async (
-  phoneNumber: string,
-  containerId: string
-): Promise<ConfirmationResult> => {
-  const cleanPhone = phoneNumber.trim();
-  const formattedPhone = cleanPhone.startsWith("+")
-    ? cleanPhone
-    : `+91${cleanPhone.replace(/\D/g, "")}`;
-
-  // Call backend Twilio Verify API endpoint
-  const res = await fetch("/api/send-otp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone: formattedPhone, type: "phone" }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || "Failed to dispatch SMS code via Twilio Verify.");
-  }
-
-  return {
-    verificationId: data.sid || "twilio_verify_" + Date.now(),
-    confirm: async (code: string) => {
-      // Check code with Twilio VerificationCheck API
-      const verifyRes = await fetch("/api/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipient: formattedPhone, code: code.trim() }),
-      });
-
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok || !verifyData.valid) {
-        throw new Error(verifyData.error || "Invalid OTP code. Please check your SMS and try again.");
-      }
-
-      return {
-        user: {
-          uid: "phone_" + formattedPhone.replace(/\D/g, ""),
-          phoneNumber: formattedPhone,
-          displayName: "",
-          email: "",
-        },
-      } as any;
-    },
-  } as ConfirmationResult;
-};
-
-export const verifyPhoneOTP = async (
-  confirmationResult: ConfirmationResult,
-  otp: string,
-  name: string
-): Promise<{ uid: string; phone: string; name: string }> => {
-  const credential = await confirmationResult.confirm(otp);
-  const firebaseUser = credential.user;
-  return {
-    uid: firebaseUser.uid,
-    phone: firebaseUser.phoneNumber || "",
-    name: name || firebaseUser.phoneNumber || "Phone User",
+export type PublicSettings = {
+  upiId: string;
+  qrPath: string;
+  payeeName?: string;
+  plans: Record<string, { label: string; amount: number }>;
+  razorpayEnabled?: boolean;
+  razorpayKeyId?: string;
+  gstin?: string;
+  matchRules?: {
+    settlementWindowDays: number;
+    amountTolerancePaise: number;
+    feePct: number;
+    feeAnomalyFactor: number;
+    fuzzyWindowDays: number;
+  };
+  featureFlags?: {
+    sampleDemo?: boolean;
+    trialCodes?: boolean;
+    agencyBrands?: boolean;
+    csvReplay?: boolean;
+    publicChangelog?: boolean;
+    maintenanceMode?: boolean;
+  };
+  announcement?: {
+    enabled?: boolean;
+    message?: string;
+    level?: string;
   };
 };
 
-export const sendEmailOTP = async (email: string): Promise<EmailOTPSession> => {
-  const cleanEmail = email.trim().toLowerCase();
-  const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+export type MyPayment = {
+  id: string;
+  plan: string;
+  amount: number;
+  utr: string;
+  status: string;
+  createdAt: string;
+  note?: string;
+  method?: string;
+};
 
-  // Send via API Route silently (no window.alert popup)
-  try {
-    await fetch("/api/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: cleanEmail, otp: generatedOtp, type: "email" }),
-    });
-  } catch (err) {
-    console.error("API Email OTP Dispatch error:", err);
-  }
-
-  return {
-    email: cleanEmail,
-    expectedOtp: generatedOtp,
+export type SavedRun = {
+  id: string;
+  label: string;
+  sources: string[];
+  summary: {
+    totalOrders: number;
+    totalPayments: number;
+    matchedCount: number;
+    exceptionCount: number;
+    autoMatchRate: number;
+    amountAtRiskPaise: number;
+    totalNetPaise: number;
   };
+  createdAt: string;
+  hasPayload?: boolean;
+  workflow?: Record<string, { status: string; note?: string; assignee?: string }>;
+  exceptionTypes?: string[];
+  brandId?: string | null;
+  payloadB64?: string | null;
 };
 
-export const verifyEmailOTP = async (
-  session: EmailOTPSession,
-  otp: string
-): Promise<{ email: string }> => {
-  if (otp.trim() !== session.expectedOtp && otp.trim() !== "123456") {
-    throw new Error("Invalid OTP code. Please check your Mail inbox and try again.");
-  }
-  return { email: session.email };
-};
-
-// 5. Post-OTP Password Integration & Session Completion
-export const completeAuthWithPassword = async (params: {
+export type TeamInfo = {
+  id: string;
   name: string;
-  identifier: string; // email or phone
-  password: string;
-  method: "phone" | "email";
-  verifiedUid?: string;
-}): Promise<UserSession> => {
-  const { name, identifier, password, method, verifiedUid } = params;
-  const displayName = name.trim() || (method === "email" ? identifier.split("@")[0] : identifier);
-  const initials = getInitials(displayName);
-  const emailAddr = method === "email" ? identifier.toLowerCase() : `${identifier.replace(/\D/g, "")}@phone.refract`;
-
-  if (isFirebaseConfigured && auth && db) {
-    let firebaseUid = verifiedUid;
-
-    // Try signing up or signing in with Firebase email & password
-    if (method === "email") {
-      try {
-        const credential = await createUserWithEmailAndPassword(auth, emailAddr, password);
-        firebaseUid = credential.user.uid;
-      } catch (err: any) {
-        if (err.code === "auth/email-already-in-use") {
-          const credential = await signInWithEmailAndPassword(auth, emailAddr, password);
-          firebaseUid = credential.user.uid;
-        } else {
-          throw err;
-        }
-      }
-    }
-
-    const uid = firebaseUid || "usr_" + Math.random().toString(36).substring(2, 10);
-    const userRef = doc(db, "users", uid);
-    const userDoc = await getDoc(userRef);
-
-    const userSession: UserSession = {
-      uid,
-      name: displayName,
-      email: method === "email" ? identifier : emailAddr,
-      avatar: initials,
-      isPro: userDoc.exists() ? userDoc.data().isPro : false,
-    };
-
-    await setDoc(userRef, {
-      name: userSession.name,
-      email: userSession.email,
-      avatar: userSession.avatar,
-      isPro: userSession.isPro || false,
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
-
-    return userSession;
-  }
-
-  // Fallback in localStorage
-  if (typeof window !== "undefined") {
-    const usersRaw = localStorage.getItem("refract_users");
-    const users = usersRaw ? JSON.parse(usersRaw) : [];
-
-    const existingIdx = users.findIndex(
-      (u: any) => u.email?.toLowerCase() === identifier.toLowerCase() || u.phone === identifier
-    );
-
-    const uid = verifiedUid || (existingIdx !== -1 ? users[existingIdx].uid : "mock_" + Math.random().toString(36).substring(2, 10));
-
-    const userObj = {
-      uid,
-      name: displayName,
-      email: method === "email" ? identifier.toLowerCase() : emailAddr,
-      phone: method === "phone" ? identifier : undefined,
-      password: password.trim(),
-      avatar: initials,
-      isPro: existingIdx !== -1 ? users[existingIdx].isPro : false,
-    };
-
-    if (existingIdx !== -1) {
-      users[existingIdx] = { ...users[existingIdx], ...userObj };
-    } else {
-      users.push(userObj);
-    }
-    localStorage.setItem("refract_users", JSON.stringify(users));
-
-    const loggedUser: UserSession = {
-      uid: userObj.uid,
-      name: userObj.name,
-      email: userObj.email,
-      avatar: userObj.avatar,
-      isPro: userObj.isPro || false,
-    };
-    localStorage.setItem("refract_user", JSON.stringify(loggedUser));
-    return loggedUser;
-  }
-
-  throw new Error("No client storage available.");
+  ownerUid: string;
+  inviteCode: string;
+  createdAt: string;
 };
 
-// 5. Sign Out
-export const signOutUser = async (): Promise<void> => {
-  if (isFirebaseConfigured && auth) {
-    await signOut(auth);
+const SESSION_KEY = "refract_user";
+
+const persistLocalSession = (session: UserSession | null) => {
+  if (typeof window === "undefined") return;
+  if (!session) {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem("refract_pro_active");
+    return;
   }
-  
-  if (typeof window !== "undefined") {
-    localStorage.removeItem("refract_user");
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  if (session.isPro) {
+    localStorage.setItem("refract_pro_active", "true");
+  } else {
+    localStorage.removeItem("refract_pro_active");
   }
 };
 
-// 6. Update Subscription Status
-export const updateSubscriptionStatus = async (
-  uid: string,
-  plan: "monthly" | "quarterly" | "annual",
-  source: "statement" | "gateway",
-  utr: string
-): Promise<UserSession> => {
-  if (isFirebaseConfigured && db) {
-    const userRef = doc(db, "users", uid);
-    const updates = {
-      isPro: true,
-      selectedPlan: plan,
-      verificationSource: source,
-      utrValue: utr,
-    };
-    await updateDoc(userRef, updates);
-
-    // Store payment receipt in Firestore
-    const paymentRef = doc(db, "payments", utr);
-    const amounts = { monthly: 4999, quarterly: 9999, annual: 29999 };
-    await setDoc(paymentRef, {
-      userId: uid,
-      amount: amounts[plan],
-      plan,
-      source,
-      timestamp: new Date().toISOString(),
+export const getUserSession = async (): Promise<UserSession | null> => {
+  try {
+    const res = await fetch("/api/me.php", {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
     });
-
-    const userDoc = await getDoc(userRef);
-    return { uid, ...userDoc.data() } as UserSession;
-  }
-
-  // Fallback
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("refract_user");
-    if (stored) {
-      const user = JSON.parse(stored);
-      user.isPro = true;
-      user.selectedPlan = plan;
-      user.verificationSource = source;
-      user.utrValue = utr;
-      localStorage.setItem("refract_user", JSON.stringify(user));
-      
-      // Update in mock registry
-      const usersRaw = localStorage.getItem("refract_users");
-      if (usersRaw) {
-        const users = JSON.parse(usersRaw);
-        const idx = users.findIndex((u: any) => u.uid === uid || u.email === user.email);
-        if (idx !== -1) {
-          users[idx].isPro = true;
-          users[idx].selectedPlan = plan;
-          users[idx].verificationSource = source;
-          users[idx].utrValue = utr;
-          localStorage.setItem("refract_users", JSON.stringify(users));
-        }
+    if (res.ok) {
+      const data = (await res.json()) as {
+        authenticated?: boolean;
+        user?: UserSession | null;
+      };
+      if (data.authenticated && data.user) {
+        const session: UserSession = {
+          ...data.user,
+          isPro: !!data.user.isPro,
+          selectedPlan: data.user.selectedPlan,
+          utrValue: data.user.utrValue,
+          paymentStatus: data.user.paymentStatus ?? null,
+          pendingPayment: data.user.pendingPayment ?? null,
+          reminderHour: data.user.reminderHour ?? 9,
+          teamName: data.user.teamName || "",
+          teamId: data.user.teamId ?? null,
+          teamRole: data.user.teamRole ?? null,
+          proExpiresAt: data.user.proExpiresAt ?? null,
+          autoRenew: !!data.user.autoRenew,
+          proViaTeam: !!data.user.proViaTeam,
+          connections: data.user.connections || [],
+        };
+        persistLocalSession(session);
+        return session;
       }
-      return user;
+      persistLocalSession(null);
+      return null;
     }
+    persistLocalSession(null);
+    return null;
+  } catch {
+    persistLocalSession(null);
+    return null;
   }
-
-  throw new Error("No client storage available.");
 };
 
-// Export Firebase instances for external use (e.g. onAuthStateChanged listener)
-export { onAuthStateChanged };
-export const getAuthInstance = (): Auth | undefined => auth;
+export const getPublicSettings = async (): Promise<PublicSettings | null> => {
+  try {
+    const res = await fetch("/api/settings.php", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { settings?: PublicSettings };
+    return data.settings || null;
+  } catch {
+    return null;
+  }
+};
+
+export const redeemTrialCode = async (code: string) => {
+  const res = await fetch("/api/trial/redeem.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Invalid trial code.");
+  return data as { message: string; days: number; proExpiresAt?: string };
+};
+
+export const getChangelog = async () => {
+  const res = await fetch("/api/changelog.php", { headers: { Accept: "application/json" } });
+  const data = await res.json().catch(() => ({}));
+  return ((data as { entries?: Array<{ id: string; title: string; body: string; at: string }> }).entries || []);
+};
+
+export const getMyBrands = async () => {
+  const res = await fetch("/api/brands/mine.php", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Failed to load brands.");
+  return data as {
+    brands: Array<{ id: string; name: string; ownerUid: string }>;
+    activeBrandId: string | null;
+    activeBrandName: string;
+  };
+};
+
+export const brandAction = async (body: Record<string, unknown>) => {
+  const res = await fetch("/api/brands/mine.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Brand action failed.");
+  return data;
+};
+
+export const getRunById = async (id: string): Promise<SavedRun> => {
+  const res = await fetch(`/api/runs/mine.php?id=${encodeURIComponent(id)}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Run not found.");
+  return (data as { run: SavedRun }).run;
+};
+
+export const updateRunWorkflow = async (
+  id: string,
+  workflow: Record<string, { status: string; note?: string; assignee?: string }>
+) => {
+  const res = await fetch("/api/runs/mine.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "workflow", id, workflow }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Workflow update failed.");
+  return data;
+};
+
+export const getMyPayments = async (): Promise<MyPayment[]> => {
+  const res = await fetch("/api/payments/mine.php", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || "Failed to load payments.");
+  }
+  return ((data as { payments?: MyPayment[] }).payments || []);
+};
+
+export const updateAccountPreferences = async (body: {
+  reminderHour?: number;
+  teamName?: string;
+  connections?: UserSession["connections"];
+}): Promise<UserSession> => {
+  const res = await fetch("/api/account/preferences.php", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || "Failed to save preferences.");
+  }
+  const user = (data as { user: UserSession }).user;
+  const session = await getUserSession();
+  return session || user;
+};
+
+/** Redirects the browser to ServerByt Google OAuth start. */
+export const signInWithGoogle = async (returnTo = "/"): Promise<void> => {
+  if (typeof window === "undefined") {
+    throw new Error("Google sign-in requires a browser.");
+  }
+  const safeReturn = returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/";
+  window.location.assign(`/api/google-start.php?returnTo=${encodeURIComponent(safeReturn)}`);
+};
+
+export const signOutUser = async (): Promise<void> => {
+  try {
+    await fetch("/api/logout.php", {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    // Still clear local session
+  }
+  persistLocalSession(null);
+};
+
+export const submitPaymentUtr = async (params: {
+  plan: "monthly" | "quarterly" | "annual";
+  utr: string;
+}): Promise<{ message: string; payment: { id: string; status: string } }> => {
+  const res = await fetch("/api/payments/submit.php", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || "Failed to submit UTR.");
+  }
+  return data as { message: string; payment: { id: string; status: string } };
+};
+
+export type RazorpayOrderResponse = {
+  success: boolean;
+  mode?: "order" | "subscription";
+  keyId: string;
+  order: { id: string; amount: number; currency: string; receipt: string } | null;
+  subscription?: { id: string } | null;
+  payment: { id: string; status: string };
+  prefill: { name: string; email: string };
+};
+
+export const createRazorpayOrder = async (
+  plan: "monthly" | "quarterly" | "annual",
+  autoRenew = false
+): Promise<RazorpayOrderResponse> => {
+  const res = await fetch("/api/payments/razorpay-create.php", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ plan, autoRenew }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || "Failed to create Razorpay order.");
+  }
+  return data as RazorpayOrderResponse;
+};
+
+export const verifyRazorpayPayment = async (params: {
+  razorpay_order_id?: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  razorpay_subscription_id?: string;
+}): Promise<{ message: string; payment: { id: string; status: string } }> => {
+  const res = await fetch("/api/payments/razorpay-verify.php", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || "Failed to verify Razorpay payment.");
+  }
+  return data as { message: string; payment: { id: string; status: string } };
+};
+
+export const trackEvent = async (event: string, meta: Record<string, unknown> = {}) => {
+  try {
+    await fetch("/api/analytics/track.php", {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ event, meta }),
+    });
+  } catch {
+    // non-blocking
+  }
+};
+
+export const getMyRuns = async (): Promise<SavedRun[]> => {
+  const res = await fetch("/api/runs/mine.php", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Failed to load runs.");
+  return ((data as { runs?: SavedRun[] }).runs || []);
+};
+
+export const saveRun = async (body: {
+  label?: string;
+  sources?: string[];
+  summary: SavedRun["summary"];
+  exceptionTypes?: string[];
+  workflow?: Record<string, { status: string; note?: string; assignee?: string }>;
+  payloadB64?: string;
+  brandId?: string;
+}): Promise<SavedRun> => {
+  const res = await fetch("/api/runs/mine.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Failed to save run.");
+  return (data as { run: SavedRun }).run;
+};
+
+export const deleteRun = async (id: string): Promise<void> => {
+  const res = await fetch("/api/runs/mine.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "delete", id }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error || "Failed to delete run.");
+  }
+};
+
+export const getMyTeam = async () => {
+  const res = await fetch("/api/teams/mine.php", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Failed to load team.");
+  return data as {
+    team: TeamInfo | null;
+    members: Array<{ uid: string; name: string; email: string; isOwner: boolean }>;
+    teamPro: boolean;
+  };
+};
+
+export const teamAction = async (body: Record<string, unknown>) => {
+  const res = await fetch("/api/teams/mine.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Team action failed.");
+  return data;
+};
+
+export const fetchShopifyOrders = async (shop: string, accessToken: string) => {
+  const res = await fetch("/api/connectors/shopify.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ shop, accessToken }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Shopify fetch failed.");
+  return data as { rows: Record<string, unknown>[]; count: number; csvHint?: string };
+};
+
+export const fetchRazorpayPayments = async (from?: string, to?: string) => {
+  const res = await fetch("/api/connectors/razorpay.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Razorpay fetch failed.");
+  return data as { rows: Record<string, unknown>[]; count: number; csvHint?: string };
+};
+
+export const fetchHealth = async () => {
+  const res = await fetch("/api/health.php", { headers: { Accept: "application/json" } });
+  return res.json();
+};
+
+export type ExceptionExplain = {
+  summary: string;
+  likelyCauses: string[];
+  suggestedActions: string[];
+  source: "rules" | "ai" | string;
+  type?: string;
+  amountInr?: number;
+  ref?: string;
+};
+
+export const explainException = async (
+  exception: Record<string, unknown>,
+  useAi = true
+): Promise<{ explain: ExceptionExplain; aiConfigured: boolean }> => {
+  const res = await fetch("/api/ai/explain-exception.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ exception, useAi }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Explain failed.");
+  return data as { explain: ExceptionExplain; aiConfigured: boolean };
+};
+
+export const checkRiskAlert = async (body: {
+  label?: string;
+  summary: { amountAtRiskPaise: number; exceptionCount: number };
+  runId?: string;
+}) => {
+  const res = await fetch("/api/alerts/check.php", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string }).error || "Alert check failed.");
+  return data as {
+    alert: { sent: boolean; channels: string[]; reason?: string };
+    settings: { enabled: boolean; thresholdInr: number };
+  };
+};
