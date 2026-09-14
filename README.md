@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PayFlow Agent
 
-## Getting Started
+Production-style payment retailer / agent portal for bill payments, wallet, QR collection, and reports.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 · React 19 · TypeScript
+- Tailwind CSS v4
+- React Hook Form + Zod
+- TanStack Table · Recharts · Zustand · Lucide · Sonner
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Demo login
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Use the mock agent credentials configured in the auth service (not shown in the UI).
 
-## Learn More
+## App sections
 
-To learn more about Next.js, take a look at the following resources:
+- **Dashboard** — PayIn / PayOut stats, trends, recent transactions
+- **Bill Payments** — category grid, fetch bill, pay, receipt
+- **Wallet** — add funds, withdraw, bank accounts, history
+- **QR Collection** — pending payment upload + history
+- **Reports** — filtered tables + CSV export
+- **Profile & Settings** — passcode change, security toggles
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Backend-ready services
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Mock implementations live in `lib/services/`. Set `NEXT_PUBLIC_API_URL` in `.env` when wiring a real API. Never put secrets in client code — use `API_SECRET` server-side only.

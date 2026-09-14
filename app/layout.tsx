@@ -1,40 +1,30 @@
 import type { Metadata } from "next";
-import Script from "next/script";
+import { DM_Sans, JetBrains_Mono, Sora } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const sora = Sora({
+  variable: "--font-sora",
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+});
+
+const jetbrains = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+});
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://reconcilex.in"),
-  title: "ReconcileX — E-commerce Payment & Payout Reconciliation",
+  title: "PayFlow Agent — Retailer Portal",
   description:
-    "Match every order to every payout, audit gateway fees, verify marketplace settlements, and recover revenue leaks automatically. Zero data sent to external servers.",
-  keywords: [
-    "ReconcileX",
-    "e-commerce reconciliation",
-    "razorpay reconciliation",
-    "shopify settlement recon",
-    "payment reconciliation",
-    "D2C finance",
-    "reconcilex.in",
-  ],
-  openGraph: {
-    title: "ReconcileX — E-commerce Payment & Payout Reconciliation",
-    description:
-      "Match every order to every payout, audit gateway fees, and recover revenue leaks. Data stays in your browser.",
-    url: "https://reconcilex.in",
-    siteName: "ReconcileX",
-    type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "ReconcileX" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "ReconcileX",
-    description: "E-commerce payment & payout reconciliation for D2C brands.",
-    images: ["/og.png"],
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+    "Professional payment retailer and agent portal for bill payments, wallet, QR collection, and reports.",
 };
 
 export default function RootLayout({
@@ -43,20 +33,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <head>
-        <Script id="theme-loader" strategy="beforeInteractive">
-          {`
-            (function() {
-              try {
-                var theme = localStorage.getItem('theme') || 'dark';
-                document.documentElement.setAttribute('data-theme', theme);
-              } catch (e) {}
-            })();
-          `}
-        </Script>
-      </head>
-      <body>
+    <html
+      lang="en"
+      className={`${dmSans.variable} ${sora.variable} ${jetbrains.variable} h-full`}
+      data-theme="dark"
+    >
+      <body className="page-root min-h-full font-sans antialiased">
         <div className="ambient-bg" aria-hidden="true">
           <div className="orb orb-1" />
           <div className="orb orb-2" />
@@ -64,6 +46,19 @@ export default function RootLayout({
           <div className="orb orb-4" />
         </div>
         {children}
+        <Toaster
+          theme="dark"
+          position="top-right"
+          richColors
+          closeButton
+          toastOptions={{
+            style: {
+              background: "rgba(20, 22, 34, 0.92)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              backdropFilter: "blur(20px)",
+            },
+          }}
+        />
       </body>
     </html>
   );

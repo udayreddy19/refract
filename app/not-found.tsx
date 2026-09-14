@@ -1,32 +1,21 @@
 import Link from "next/link";
-import SiteNav from "@/components/SiteNav";
-import SiteFooter from "@/components/SiteFooter";
 
 export default function NotFound() {
   return (
-    <div className="page-root marketing-page">
-      <SiteNav showToolLink />
-      <main className="marketing-main not-found-main">
-        <p className="hero-eyebrow" style={{ justifyContent: "center" }}>
-          <span className="hero-dot" />
-          404
-        </p>
-        <h1 className="hero-title" style={{ fontSize: "clamp(2rem, 5vw, 3rem)" }}>
-          Page not found
-        </h1>
-        <p className="hero-subtitle" style={{ marginBottom: 28 }}>
-          That URL doesn’t exist. Head home to run a reconciliation, or check pricing.
-        </p>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <Link href="/" className="btn btn-primary">
-            Go home
-          </Link>
-          <Link href="/pricing" className="btn btn-secondary">
-            View pricing
-          </Link>
-        </div>
-      </main>
-      <SiteFooter />
+    <div className="relative z-[1] flex min-h-screen flex-col items-center justify-center px-4 text-center">
+      <p className="text-sm font-medium text-[var(--t-mid)]">404</p>
+      <h1 className="font-display mt-2 text-2xl font-semibold text-[var(--t-hi)]">
+        Page not found
+      </h1>
+      <p className="mt-2 text-sm text-[var(--t-mid)]">
+        The page you are looking for does not exist.
+      </p>
+      <Link
+        href="/dashboard"
+        className="mt-6 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-[#0a0b10] shadow-[var(--s-btn-w)] hover:scale-[1.02]"
+      >
+        Go to Dashboard
+      </Link>
     </div>
   );
 }
