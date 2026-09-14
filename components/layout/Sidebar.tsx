@@ -18,6 +18,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { authService } from "@/lib/services";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -110,7 +111,8 @@ export function Sidebar() {
         description="Are you sure you want to logout?"
         confirmLabel="Logout"
         variant="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
+          await authService.logout();
           logout();
           setLogoutOpen(false);
           router.push("/login");

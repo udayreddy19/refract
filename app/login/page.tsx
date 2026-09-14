@@ -117,6 +117,28 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          <div className="relative z-[1] mt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  const res = await authService.loginWithGoogle();
+                  setAuth(res.user, res.token);
+                  toast.success("Signed in with Google");
+                  router.push("/dashboard");
+                } catch (e) {
+                  toast.error(
+                    e instanceof Error ? e.message : "Google sign-in failed"
+                  );
+                }
+              }}
+            >
+              Continue with Google
+            </Button>
+          </div>
+
           <div className="relative z-[1] mt-5 border-t border-white/10 pt-5">
             <button
               type="button"

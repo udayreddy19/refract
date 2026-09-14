@@ -24,5 +24,15 @@ define('RAZORPAY_KEY_SECRET', 'your-razorpay-key-secret');
 /** Optional: Dashboard → Webhooks → signing secret for payment.captured */
 define('RAZORPAY_WEBHOOK_SECRET', '');
 
+/** Cashfree (BetKing-compatible) — Dashboard → Developers */
+define('CASHFREE_APP_ID', 'your-cashfree-app-id');
+define('CASHFREE_SECRET_KEY', 'your-cashfree-secret-key');
+define('CASHFREE_WEBHOOK_SECRET', ''); // preferred dedicated webhook secret
+define('CASHFREE_ENVIRONMENT', 'sandbox'); // sandbox | production
+define('CASHFREE_API_VERSION', '2023-08-01');
+
+/** Firebase Web API key — used to verify ID tokens for PayFlow agents */
+define('FIREBASE_WEB_API_KEY', '');
+
 /** Optional: Google AI Studio / Gemini API key for richer exception explains */
 define('GEMINI_API_KEY', '');

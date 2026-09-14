@@ -35,6 +35,11 @@ import {
   QR_PRICING,
 } from "@/lib/mock-data";
 import { transactionService, walletService } from "@/lib/services";
+import { paymentService } from "@/lib/services/paymentService";
+import {
+  openCashfreeCheckout,
+  openRazorpayCheckout,
+} from "@/lib/payments/gateways";
 import type { BankAccount, Transaction } from "@/lib/types";
 import { cn, formatINR, maskAccount } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
@@ -94,6 +99,9 @@ export default function WalletPage() {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [pendingCategory, setPendingCategory] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [gateway, setGateway] = useState<"RAZORPAY" | "CASHFREE">("RAZORPAY");
+  const [demoMode, setDemoMode] = useState(true);
+  const token = useAppStore((s) => s.token);
   const [addingFunds, setAddingFunds] = useState(false);
 
   const [banks, setBanks] = useState<BankAccount[]>([]);
@@ -262,6 +270,13 @@ export default function WalletPage() {
     []
   );
 
+  useEffect(() => {
+    paymentService.getProviders().then((p) => {
+      setDemoMode(p.demoMode);
+      setGateway(p.primary);
+    });
+  }, []);
+
   const openCategoryModal = () => {
     setPendingCategory(selectedCategory);
     setCategoryModalOpen(true);
@@ -282,18 +297,109 @@ export default function WalletPage() {
       toast.error("Select a category type first");
       return;
     }
+    const amount = Number(values.amount);
+    if (Number.isNaN(amount) || amount < 100) {
+      toast.error("Minimum top-up is ₹100");
+      return;
+    }
     setAddingFunds(true);
     try {
-      const result = await walletService.addFunds({
+      const order = await paymentService.createOrder({
+        amount,
+        provider: gateway,
         customerName: values.customerName,
         mobile: values.mobile,
-        paymentCategory: values.paymentCategory,
-        cardType: values.cardType,
-        amount: Number(values.amount),
+        category: values.paymentCategory,
+        idToken: token || undefined,
       });
-      setWalletBalance(result.balance);
+
+      if (order.demoMode) {
+        // Local / keys-missing: simulate PSP success then credit via mock wallet
+        const verified = await paymentService.verify({
+          provider: gateway,
+          depositId: order.depositId,
+          orderId: order.orderId,
+          razorpay_payment_id: `pay_demo_${Date.now()}`,
+          razorpay_signature: "demo",
+          idToken: token || undefined,
+        });
+        const result = await walletService.addFunds({
+          customerName: values.customerName,
+          mobile: values.mobile,
+          paymentCategory: values.paymentCategory,
+          cardType: values.cardType,
+          amount,
+        });
+        setWalletBalance(verified.balance > 0 ? verified.balance : result.balance);
+        resetAdd();
+        toast.success(
+          gateway === "RAZORPAY"
+            ? "Razorpay payment successful (demo)"
+            : "Cashfree payment successful (demo)"
+        );
+        return;
+      }
+
+      if (gateway === "RAZORPAY") {
+        const rzp = await openRazorpayCheckout({
+          keyId: order.keyId || "",
+          orderId: order.orderId,
+          amountPaise: order.amountPaise,
+          name: values.customerName,
+          mobile: values.mobile,
+          description: `Wallet top-up · ${values.paymentCategory}`,
+        });
+        const verified = await paymentService.verify({
+          provider: "RAZORPAY",
+          depositId: order.depositId,
+          orderId: order.orderId,
+          razorpay_payment_id: rzp.razorpay_payment_id,
+          razorpay_signature: rzp.razorpay_signature,
+          idToken: token || undefined,
+        });
+        if (verified.balance > 0) setWalletBalance(verified.balance);
+        else {
+          const result = await walletService.addFunds({
+            customerName: values.customerName,
+            mobile: values.mobile,
+            paymentCategory: values.paymentCategory,
+            cardType: values.cardType,
+            amount,
+          });
+          setWalletBalance(result.balance);
+        }
+        resetAdd();
+        toast.success("Razorpay payment successful");
+        return;
+      }
+
+      // Cashfree
+      if (!order.paymentSessionId) {
+        throw new Error("Cashfree payment session missing");
+      }
+      await openCashfreeCheckout({
+        paymentSessionId: order.paymentSessionId,
+        environment: order.environment,
+      });
+      const verified = await paymentService.verify({
+        provider: "CASHFREE",
+        depositId: order.depositId,
+        orderId: order.orderId,
+        idToken: token || undefined,
+      });
+      if (verified.balance > 0) setWalletBalance(verified.balance);
+      else {
+        const result = await walletService.addFunds({
+          customerName: values.customerName,
+          mobile: values.mobile,
+          paymentCategory: values.paymentCategory,
+          cardType: values.cardType,
+          amount,
+        });
+        setWalletBalance(result.balance);
+      }
       resetAdd();
-      toast.success("Payment successful");
+      toast.success("Cashfree payment successful");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Payment failed");
     } finally {
@@ -475,6 +581,31 @@ export default function WalletPage() {
                 }
               >
                 <form onSubmit={handleAddSubmit(onAddFunds)} className="space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-[var(--t-mid)]">Payment Gateway</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(["RAZORPAY", "CASHFREE"] as const).map((g) => (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => setGateway(g)}
+                          className={cn(
+                            "rounded-full border px-4 py-2 text-sm font-medium transition",
+                            gateway === g
+                              ? "border-white/30 bg-white text-[#0a0b10]"
+                              : "border-white/10 bg-white/[0.04] text-[var(--t-mid)] hover:text-[var(--t-hi)]"
+                          )}
+                        >
+                          {g === "RAZORPAY" ? "Razorpay" : "Cashfree"}
+                        </button>
+                      ))}
+                    </div>
+                    {demoMode && (
+                      <p className="text-xs text-[var(--yellow)]">
+                        Gateway keys not configured — payments run in demo mode.
+                      </p>
+                    )}
+                  </div>
                   <Input
                     label="Customer Name"
                     required
@@ -526,7 +657,9 @@ export default function WalletPage() {
                       Select Category Type
                     </Button>
                     <Button type="submit" className="flex-1" loading={addingFunds}>
-                      Add Funds
+                      {addingFunds
+                        ? "Processing..."
+                        : `Pay with ${gateway === "RAZORPAY" ? "Razorpay" : "Cashfree"}`}
                     </Button>
                   </div>
                 </form>

@@ -103,7 +103,7 @@ export default function ProfilePage() {
   const onChangePasscode = async (values: PasscodeValues) => {
     setSubmitting(true);
     try {
-      await authService.changePasscode(values.current, values.next);
+      await authService.changePasscode(values.current, values.next, user.agentId);
       closePasscode();
       setSuccessOpen(true);
       toast.success("Passcode updated successfully");

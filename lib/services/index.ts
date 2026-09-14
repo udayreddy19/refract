@@ -1,16 +1,19 @@
 import { isWithinInterval, startOfDay, endOfDay, subDays } from "date-fns";
 import {
+  AGENT_ACCOUNTS,
   CURRENT_USER,
   MOCK_BANK_ACCOUNTS,
   MOCK_CREDENTIALS,
   MOCK_TRANSACTIONS,
   MOCK_WALLET_BALANCE,
+  findAgentAccount,
   getChartData,
   mutateBalance,
   mutateBanks,
   mutateTransactions,
 } from "@/lib/mock-data";
 import type {
+  AgentUser,
   BankAccount,
   BillDetails,
   DashboardStats,
@@ -20,38 +23,157 @@ import type {
   TransactionType,
 } from "@/lib/types";
 import { delay } from "@/lib/utils";
+import {
+  firebaseLoginWithAgent,
+  firebaseLoginWithGoogle,
+  firebaseLogout,
+  isFirebaseConfigured,
+} from "@/lib/firebase";
+import { paymentService } from "@/lib/services/paymentService";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 /** Swap implementations to hit real APIs when NEXT_PUBLIC_API_URL is set */
 async function apiFetch<T>(_path: string, _init?: RequestInit): Promise<T | null> {
   if (!API_BASE) return null;
-  // Placeholder for future backend integration
   return null;
 }
 
+function userFromFirebase(
+  agentId: string,
+  displayName: string | null,
+  email: string | null,
+  uid: string
+): AgentUser {
+  const name = displayName || agentId.toUpperCase();
+  const initials = name
+    .split(/\s+/)
+    .map((p) => p[0] || "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return {
+    id: uid,
+    name,
+    agentId: agentId.toUpperCase(),
+    mobile: "",
+    email: email || `${agentId.toLowerCase()}@payflow.agent`,
+    avatarInitials: initials || "PF",
+  };
+}
+
 export const authService = {
-  async login(agentId: string, passcode: string): Promise<{ token: string; user: typeof CURRENT_USER }> {
-    await delay(900);
-    const remote = await apiFetch<{ token: string; user: typeof CURRENT_USER }>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ agentId, passcode }),
-    });
-    if (remote) return remote;
-    if (
-      agentId.trim().toUpperCase() === MOCK_CREDENTIALS.agentId &&
-      passcode === MOCK_CREDENTIALS.passcode
-    ) {
-      return { token: "mock-jwt-token", user: CURRENT_USER };
+  async login(
+    agentId: string,
+    passcode: string
+  ): Promise<{ token: string; user: AgentUser; idToken?: string }> {
+    await delay(400);
+
+    // 1) Firebase Email/Password (prod) — auto-provisions agent on first login
+    if (isFirebaseConfigured()) {
+      try {
+        const { user: fbUser, idToken } = await firebaseLoginWithAgent(agentId, passcode);
+        const user = userFromFirebase(
+          agentId,
+          fbUser.displayName,
+          fbUser.email,
+          fbUser.uid
+        );
+        await paymentService.syncSession({
+          agentId: user.agentId,
+          name: user.name,
+          email: user.email,
+          mobile: user.mobile,
+          idToken,
+        });
+        return { token: idToken, user, idToken };
+      } catch (err: unknown) {
+        const code = (err as { code?: string })?.code || "";
+        // Fall through to mock if Auth provider not enabled
+        if (
+          code !== "auth/configuration-not-found" &&
+          code !== "auth/operation-not-allowed" &&
+          code !== "auth/api-key-not-valid"
+        ) {
+          // Wrong password etc. — still try mock for seeded agents
+          const mockUser = findAgentAccount(agentId, passcode);
+          if (!mockUser) {
+            throw new Error(
+              (err as { message?: string })?.message || "Invalid Agent ID or Passcode"
+            );
+          }
+        }
+      }
     }
+
+    // 2) Seeded mock agents (local / fallback)
+    const user = findAgentAccount(agentId, passcode);
+    if (user) {
+      await paymentService.syncSession({
+        agentId: user.agentId,
+        name: user.name,
+        email: user.email,
+        mobile: user.mobile,
+        passcode,
+      } as Parameters<typeof paymentService.syncSession>[0] & { passcode?: string });
+      // Also sync with passcode via dedicated body for PHP
+      try {
+        const base = process.env.NEXT_PUBLIC_API_URL || "";
+        await fetch(`${base}/api/payflow/login.php`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            agentId: user.agentId,
+            passcode,
+            name: user.name,
+            email: user.email,
+            mobile: user.mobile,
+          }),
+        });
+      } catch {
+        /* PHP may be unavailable in local static mode */
+      }
+      return { token: `mock-jwt-${user.agentId}`, user };
+    }
+
     throw new Error("Invalid Agent ID or Passcode");
   },
-  async changePasscode(current: string, next: string) {
+
+  async loginWithGoogle(): Promise<{ token: string; user: AgentUser; idToken?: string }> {
+    if (!isFirebaseConfigured()) {
+      throw new Error("Firebase is not configured");
+    }
+    const { user: fbUser, idToken } = await firebaseLoginWithGoogle();
+    const agentId = (fbUser.email || "GOOGLE").split("@")[0].toUpperCase();
+    const user = userFromFirebase(agentId, fbUser.displayName, fbUser.email, fbUser.uid);
+    await paymentService.syncSession({
+      agentId: user.agentId,
+      name: user.name,
+      email: user.email,
+      idToken,
+    });
+    return { token: idToken, user, idToken };
+  },
+
+  async logout() {
+    try {
+      await firebaseLogout();
+    } catch {
+      /* ignore */
+    }
+  },
+
+  async changePasscode(current: string, next: string, agentId?: string) {
     await delay(800);
-    if (current !== MOCK_CREDENTIALS.passcode) {
+    const account = AGENT_ACCOUNTS.find(
+      (a) => a.agentId === (agentId || MOCK_CREDENTIALS.agentId)
+    );
+    if (!account || account.passcode !== current) {
       throw new Error("Current passcode is incorrect");
     }
     if (next.length < 6) throw new Error("New passcode must be at least 6 digits");
+    account.passcode = next;
     return { success: true };
   },
 };

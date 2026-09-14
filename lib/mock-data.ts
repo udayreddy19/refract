@@ -12,14 +12,52 @@ export const MOCK_CREDENTIALS = {
   passcode: "123456",
 } as const;
 
+/** Production + demo agent accounts (client mock auth until backend is wired) */
+export type AgentAccount = AgentUser & { passcode: string };
+
+export const AGENT_ACCOUNTS: AgentAccount[] = [
+  {
+    id: "u1",
+    name: "AGENT USER",
+    agentId: "AGENT1001",
+    mobile: "+91 9000000000",
+    email: "agent@example.com",
+    avatarInitials: "AU",
+    passcode: "123456",
+  },
+  {
+    id: "u-prod",
+    name: "PROD AGENT",
+    agentId: "AGENTPROD",
+    mobile: "+91 9876543210",
+    email: "prod@payflow.agent",
+    avatarInitials: "PA",
+    passcode: "PayFlow@2026",
+  },
+];
+
+export function findAgentAccount(agentIdOrMobile: string, passcode: string): AgentUser | null {
+  const key = agentIdOrMobile.trim().toUpperCase();
+  const digits = agentIdOrMobile.replace(/\D/g, "");
+  const account = AGENT_ACCOUNTS.find((a) => {
+    const idMatch = a.agentId.toUpperCase() === key;
+    const mobileMatch = digits.length >= 10 && a.mobile.replace(/\D/g, "").endsWith(digits.slice(-10));
+    return (idMatch || mobileMatch) && a.passcode === passcode;
+  });
+  if (!account) return null;
+  const { passcode: _, ...user } = account;
+  return user;
+}
+
 export const CURRENT_USER: AgentUser = {
-  id: "u1",
-  name: "AGENT USER",
-  agentId: "AGENT1001",
-  mobile: "+91 9000000000",
-  email: "agent@example.com",
-  avatarInitials: "AU",
+  id: AGENT_ACCOUNTS[0].id,
+  name: AGENT_ACCOUNTS[0].name,
+  agentId: AGENT_ACCOUNTS[0].agentId,
+  mobile: AGENT_ACCOUNTS[0].mobile,
+  email: AGENT_ACCOUNTS[0].email,
+  avatarInitials: AGENT_ACCOUNTS[0].avatarInitials,
 };
+
 
 export const BILL_CATEGORIES: BillCategory[] = [
   { id: "credit-card", name: "Credit Card", icon: "CreditCard", color: "#126B73", bg: "#E6F3F4" },

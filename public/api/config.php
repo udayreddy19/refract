@@ -32,7 +32,7 @@ if (in_array($origin, $allowedOrigins, true)) {
     header('Vary: Origin');
 }
 
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Allow-Methods: GET, POST, PATCH, OPTIONS');
 header('X-Content-Type-Options: nosniff');
 
