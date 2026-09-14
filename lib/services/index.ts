@@ -89,18 +89,25 @@ export const authService = {
         return { token: idToken, user, idToken };
       } catch (err: unknown) {
         const code = (err as { code?: string })?.code || "";
+        const message = (err as { message?: string })?.message || "Login failed";
+
+        if (code === "auth/unauthorized-domain") {
+          throw new Error(
+            "This domain is not authorized in Firebase. Add it under Firebase Console → Authentication → Settings → Authorized domains (localhost, 127.0.0.1, reconcilex.in)."
+          );
+        }
+
         // Fall through to mock if Auth provider not enabled
         if (
           code !== "auth/configuration-not-found" &&
           code !== "auth/operation-not-allowed" &&
-          code !== "auth/api-key-not-valid"
+          code !== "auth/api-key-not-valid" &&
+          code !== "auth/unauthorized-domain"
         ) {
           // Wrong password etc. — still try mock for seeded agents
           const mockUser = findAgentAccount(agentId, passcode);
           if (!mockUser) {
-            throw new Error(
-              (err as { message?: string })?.message || "Invalid Agent ID or Passcode"
-            );
+            throw new Error(message || "Invalid Agent ID or Passcode");
           }
         }
       }
