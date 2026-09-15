@@ -1,12 +1,13 @@
 {
-  "name": "payflow-agent",
+  "name": "reconcilex",
   "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy": "bash ./scripts/deploy.sh"
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",

@@ -23,7 +23,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PayFlow Agent — Retailer Wallet",
+  title: "ReconcileX — Retailer Wallet",
   description:
     "UPI-style retailer portal for bill payments, wallet top-ups, QR collection, and reports.",
 };

@@ -44,7 +44,7 @@ $headers = [
     'Host: refract-47a33.firebaseapp.com',
     'Accept: ' . ($_SERVER['HTTP_ACCEPT'] ?? '*/*'),
     'Accept-Language: ' . ($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? 'en'),
-    'User-Agent: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'PayFlow-Firebase-Auth-Proxy'),
+    'User-Agent: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'ReconcileX-Firebase-Auth-Proxy'),
 ];
 
 if (!empty($_SERVER['CONTENT_TYPE'])) {

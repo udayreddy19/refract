@@ -155,7 +155,7 @@ export default function ProfilePage() {
           }
         >
           <p className="mb-4 text-sm text-muted">
-            Update your agent passcode regularly to keep your PayFlow account secure.
+            Update your agent passcode regularly to keep your ReconcileX account secure.
           </p>
           <Button type="button" onClick={() => setPasscodeOpen(true)}>
             Change Passcode

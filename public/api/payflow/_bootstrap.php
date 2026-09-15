@@ -1,6 +1,6 @@
 <?php
 /**
- * PayFlow Agent helpers — wallet deposits via Razorpay + Cashfree (BetKing patterns).
+ * ReconcileX agent helpers — wallet deposits via Razorpay + Cashfree.
  */
 require_once __DIR__ . '/../config.php';
 
@@ -147,7 +147,7 @@ function payflow_verify_firebase_id_token(string $idToken): ?array
 }
 
 /**
- * Prefer PayFlow agent session; then Firebase bearer mapped to a registered agent.
+ * Prefer agent session; then Firebase bearer mapped to a registered agent.
  */
 function payflow_require_agent(): array
 {

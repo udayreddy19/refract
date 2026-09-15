@@ -55,10 +55,10 @@ export default function LoginPage() {
       <div className="flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[var(--brand-grad)] text-sm font-bold text-white shadow-[var(--s-btn-w)]">
-            PF
+            RX
           </div>
           <span className="font-display text-base font-semibold text-[var(--t-hi)]">
-            PayFlow
+            ReconcileX
           </span>
         </div>
         <ThemeToggle />
@@ -69,7 +69,7 @@ export default function LoginPage() {
           <div className="relative z-[1]">
             <p className="text-sm font-medium text-white/80">Retailer portal</p>
             <h1 className="font-display mt-1 text-2xl font-bold tracking-tight text-white">
-              PayFlow Agent
+              ReconcileX Agent
             </h1>
             <p className="mt-2 max-w-xs text-sm text-white/75">
               Bills, wallet top-ups, QR collections — like your everyday UPI app.

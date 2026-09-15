@@ -62,7 +62,7 @@ function LoginView({ onSuccess }: { onSuccess: () => void }) {
             <Shield size={18} />
           </div>
           <div>
-            <h1 className="font-display text-xl font-semibold">PayFlow Admin</h1>
+            <h1 className="font-display text-xl font-semibold">ReconcileX Admin</h1>
             <p className="text-sm text-[var(--t-mid)]">Control retailers & wallets</p>
           </div>
         </div>

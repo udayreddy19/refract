@@ -1,11 +1,14 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────────────────────
-# ReconcileX — One-command build & deploy to ServerByt via FTP
+# ReconcileX — Build & deploy via FTP
 # Usage:  npm run deploy   (or ./scripts/deploy.sh)
+#
+# CRITICAL: Retailer/agent data lives in remote data/ (JSON + SQLite).
+# Never upload or delete that directory — mirror --delete used to wipe
+# payflow_agents.json / reconcilex.sqlite when those files were not in ./out.
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-# Load FTP credentials from .env.local (handles special chars in values)
 ENV_FILE=".env.local"
 if [ ! -f "$ENV_FILE" ]; then
   echo "❌ .env.local not found"
@@ -30,18 +33,20 @@ echo "║       ReconcileX — Build & Deploy                ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 
-# Step 1: Build
 echo "🔨 Building production bundle..."
 npm run build
 echo "✅ Build complete!"
 echo ""
 
-# Never ship live secrets or overwrite CRM JSON from local seeds
+# Strip anything that must never overwrite production state
 rm -f ./out/api/secrets.php
-find ./out/data -type f \( -name '*.json' -o -name '*.sqlite' -o -name '*.sqlite-*' \) -delete 2>/dev/null || true
+# Remove local seed/empty CRM files so they cannot be uploaded even if excludes fail
+if [ -d ./out/data ]; then
+  find ./out/data -type f ! -name '.htaccess' -delete 2>/dev/null || true
+fi
 
 echo "🚀 Deploying to ${FTP_HOST}:${FTP_REMOTE} ..."
-echo "   (preserving remote data/* and api/secrets.php)"
+echo "   Preserving remote: data/**, api/secrets.php, uploads/**"
 lftp <<EOF
 set ssl:verify-certificate no
 set ftp:ssl-allow yes
@@ -49,21 +54,25 @@ set net:timeout 25
 set net:max-retries 3
 set net:reconnect-interval-base 2
 open -u "${FTP_USER}","${FTP_PASS}" "ftp://${FTP_HOST}"
+# Upload site files. --delete cleans removed assets, but data/ + secrets + uploads
+# are fully excluded so remote retailer wallets/agents survive every deploy.
 mirror --reverse --delete --verbose --parallel=3 \
   --exclude-glob .DS_Store \
   --exclude-glob "*.zip" \
-  --exclude-glob "data/*.json" \
-  --exclude-glob "data/*.sqlite" \
-  --exclude-glob "data/*.sqlite-*" \
+  --exclude-glob "data" \
+  --exclude-glob "data/*" \
+  --exclude-glob "data/**" \
   --exclude-glob "api/secrets.php" \
+  --exclude-glob "uploads" \
   --exclude-glob "uploads/*" \
+  --exclude-glob "uploads/**" \
   ./out/ ${FTP_REMOTE}/
 bye
 EOF
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║  ✅ Deployed to https://reconcilex.in            ║"
-echo "║  Remember: keep api/secrets.php + data/*         ║"
+echo "║  ✅ Deploy finished                              ║"
+echo "║  Remote data/ (agents, wallets) was NOT touched  ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""

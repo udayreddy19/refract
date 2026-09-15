@@ -92,7 +92,7 @@ export function Header({ title }: { title?: string }) {
 
         <div className="flex items-center gap-2.5 border-l border-[var(--g-border)] pl-3 sm:pl-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-grad)] text-xs font-semibold text-white shadow-[var(--s-btn-w)]">
-            {user?.avatarInitials || "PF"}
+            {user?.avatarInitials || "RX"}
           </div>
           <div className="hidden min-w-0 sm:block">
             <p className="truncate text-sm font-medium text-[var(--t-hi)]">

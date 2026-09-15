@@ -80,7 +80,7 @@ if ($provider === 'RAZORPAY') {
             'depositId' => $depositId,
             'uid' => $agent['uid'],
             'agentId' => $agent['agentId'] ?? '',
-            'product' => 'PayFlow Wallet',
+            'product' => 'ReconcileX Wallet',
         ],
     ]);
     if (empty($api['ok']) || empty($api['body']['id'])) {
@@ -147,7 +147,7 @@ $cf = cashfree_api('POST', 'orders', [
         'return_url' => $returnUrl,
         'notify_url' => $notifyUrl,
     ],
-    'order_note' => 'PayFlow wallet top-up',
+    'order_note' => 'ReconcileX wallet top-up',
 ]);
 
 if (empty($cf['ok']) || empty($cf['body']['payment_session_id'])) {

@@ -34,7 +34,7 @@ function payflow_login_success(array $agent, string $auth): void
             'email' => (string) ($agent['email'] ?? ''),
             'name' => (string) ($agent['name'] ?? $agent['agentId']),
             'mobile' => (string) ($agent['mobile'] ?? ''),
-            'avatarInitials' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($agent['name'] ?? $agent['agentId'])) ?: 'PF', 0, 2)),
+            'avatarInitials' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($agent['name'] ?? $agent['agentId'])) ?: 'RX', 0, 2)),
         ],
         'balance' => payflow_wallet_get($uid),
         'token' => 'session',

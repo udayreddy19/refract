@@ -76,7 +76,7 @@ export async function openRazorpayCheckout(opts: {
       key: opts.keyId,
       amount: opts.amountPaise,
       currency: "INR",
-      name: "PayFlow Agent",
+      name: "ReconcileX",
       description: opts.description || "Wallet top-up",
       order_id: opts.orderId,
       prefill: {

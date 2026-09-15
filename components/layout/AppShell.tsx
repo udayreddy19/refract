@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setAuth = useAppStore((s) => s.setAuth);
   const setWalletBalance = useAppStore((s) => s.setWalletBalance);
   const logout = useAppStore((s) => s.logout);
-  const title = titles[pathname] || "PayFlow";
+  const title = titles[pathname] || "ReconcileX";
 
   useEffect(() => {
     if (!token) {

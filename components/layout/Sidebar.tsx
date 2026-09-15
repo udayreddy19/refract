@@ -48,12 +48,12 @@ export function Sidebar() {
     <div className="flex h-full flex-col bg-[var(--sidebar)]">
       <div className="flex h-16 items-center gap-2 border-b border-[var(--g-border)] px-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[var(--brand-grad)] text-sm font-bold text-white shadow-[var(--s-btn-w)]">
-          PF
+          RX
         </div>
         {!sidebarCollapsed && (
           <div className="min-w-0">
             <p className="font-display truncate text-sm font-semibold text-[var(--t-hi)]">
-              PayFlow
+              ReconcileX
             </p>
             <p className="truncate text-xs text-[var(--t-low)]">Agent Wallet</p>
           </div>

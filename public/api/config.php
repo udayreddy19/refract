@@ -91,9 +91,43 @@ if (!defined('RAZORPAY_KEY_SECRET')) {
 if (!defined('RAZORPAY_WEBHOOK_SECRET')) {
     define('RAZORPAY_WEBHOOK_SECRET', getenv('RAZORPAY_WEBHOOK_SECRET') ?: '');
 }
+if (!defined('MYSQL_HOST')) {
+    define('MYSQL_HOST', getenv('MYSQL_HOST') ?: '');
+}
+if (!defined('MYSQL_PORT')) {
+    define('MYSQL_PORT', getenv('MYSQL_PORT') ?: '3306');
+}
+if (!defined('MYSQL_DATABASE')) {
+    define('MYSQL_DATABASE', getenv('MYSQL_DATABASE') ?: '');
+}
+if (!defined('MYSQL_USER')) {
+    define('MYSQL_USER', getenv('MYSQL_USER') ?: '');
+}
+if (!defined('MYSQL_PASSWORD')) {
+    define('MYSQL_PASSWORD', getenv('MYSQL_PASSWORD') ?: '');
+}
+if (!defined('MYSQL_DSN')) {
+    define('MYSQL_DSN', getenv('MYSQL_DSN') ?: '');
+}
+if (!defined('WHATSAPP_ALERTS_ENABLED')) {
+    define('WHATSAPP_ALERTS_ENABLED', getenv('WHATSAPP_ALERTS_ENABLED') ?: '0');
+}
+if (!defined('LOW_BALANCE_THRESHOLD')) {
+    define('LOW_BALANCE_THRESHOLD', (float) (getenv('LOW_BALANCE_THRESHOLD') ?: '500'));
+}
+if (!defined('DEFAULT_DAILY_DEBIT_CAP')) {
+    define('DEFAULT_DAILY_DEBIT_CAP', (float) (getenv('DEFAULT_DAILY_DEBIT_CAP') ?: '200000'));
+}
+if (!defined('DEBIT_VELOCITY_MAX')) {
+    define('DEBIT_VELOCITY_MAX', (int) (getenv('DEBIT_VELOCITY_MAX') ?: '40'));
+}
+if (!defined('DEBIT_VELOCITY_WINDOW_MIN')) {
+    define('DEBIT_VELOCITY_WINDOW_MIN', (int) (getenv('DEBIT_VELOCITY_WINDOW_MIN') ?: '60'));
+}
 
 define('DATA_DIR', dirname(__DIR__) . '/data');
 
+require_once __DIR__ . '/mysql.php';
 require_once __DIR__ . '/extras.php';
 
 function google_is_configured(): bool

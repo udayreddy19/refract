@@ -66,7 +66,7 @@ function userFromAgentPayload(agent: {
         .join("")
         .slice(0, 2)
         .toUpperCase() ||
-      "PF",
+      "RX",
   };
 }
 

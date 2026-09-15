@@ -34,5 +34,20 @@ define('CASHFREE_WEBHOOK_SECRET', ''); // required in production
 define('CASHFREE_ENVIRONMENT', 'production'); // or sandbox
 define('CASHFREE_API_VERSION', '2023-08-01');
 
-/** Firebase web API key (same as NEXT_PUBLIC_FIREBASE_API_KEY) for token verify */
 define('FIREBASE_WEB_API_KEY', '');
+
+/** ServerByt MySQL (Databases panel). Required for durable agents/wallets. */
+define('MYSQL_HOST', 'localhost');
+define('MYSQL_PORT', '3306');
+define('MYSQL_DATABASE', 'your_database_name');
+define('MYSQL_USER', 'your_database_user');
+define('MYSQL_PASSWORD', 'your_database_password');
+// Or set a full DSN instead of the fields above:
+// define('MYSQL_DSN', 'mysql:host=localhost;port=3306;dbname=your_db;charset=utf8mb4');
+
+/** Optional WhatsApp deep-link alerts (1 = enable) */
+define('WHATSAPP_ALERTS_ENABLED', '0');
+define('LOW_BALANCE_THRESHOLD', '500');
+define('DEFAULT_DAILY_DEBIT_CAP', '200000');
+define('DEBIT_VELOCITY_MAX', '40');
+define('DEBIT_VELOCITY_WINDOW_MIN', '60');

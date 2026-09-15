@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'name' => $agent['name'] ?? '',
             'email' => $agent['email'] ?? '',
             'mobile' => $agent['mobile'] ?? '',
-            'avatarInitials' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($agent['name'] ?? 'PF')) ?: 'PF', 0, 2)),
+            'avatarInitials' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($agent['name'] ?? 'RX')) ?: 'RX', 0, 2)),
         ],
         'balance' => payflow_wallet_get((string) $agent['uid']),
     ]);

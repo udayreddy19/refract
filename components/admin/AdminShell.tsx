@@ -104,7 +104,7 @@ export default function AdminShell({
               <Shield size={16} />
             </div>
             <div>
-              <p className="font-display text-sm font-semibold">PayFlow Admin</p>
+              <p className="font-display text-sm font-semibold">ReconcileX Admin</p>
               <p className="text-xs text-[var(--t-low)]">Admin · {role}</p>
             </div>
           </div>
@@ -157,7 +157,7 @@ export default function AdminShell({
             <div>
               <h1 className="font-display text-xl font-semibold tracking-tight">{title}</h1>
               <p className="text-xs text-[var(--t-low)] lg:hidden">
-                PayFlow Admin · {role}
+                ReconcileX Admin · {role}
               </p>
             </div>
             <div className="flex items-center gap-2 overflow-x-auto">
