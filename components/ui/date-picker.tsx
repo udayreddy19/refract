@@ -54,8 +54,8 @@ export function DatePicker({
                   className={cn(
                     "flex w-full rounded-[12px] px-3 py-2 text-left text-sm transition-colors",
                     value.preset === p.id
-                      ? "bg-white text-[#0a0b10] font-medium"
-                      : "text-[var(--t-mid)] hover:bg-white/[0.06] hover:text-[var(--t-hi)]"
+                      ? "bg-[var(--brand)] font-medium text-white"
+                      : "text-[var(--t-mid)] hover:bg-[var(--brand-soft)] hover:text-[var(--t-hi)]"
                   )}
                   onClick={() => {
                     if (p.id === "custom") {
@@ -71,12 +71,12 @@ export function DatePicker({
               ))}
             </div>
             {value.preset === "custom" && (
-              <div className="relative z-[1] mt-3 space-y-2 border-t border-white/10 pt-3">
+              <div className="relative z-[1] mt-3 space-y-2 border-t border-[var(--g-border)] pt-3">
                 <label className="block text-xs font-medium text-[var(--t-mid)]">
                   From
                   <input
                     type="date"
-                    className="mt-1 h-10 w-full rounded-[12px] border border-white/10 bg-white/[0.04] px-2 text-sm text-[var(--t-hi)]"
+                    className="mt-1 h-10 w-full rounded-[12px] border border-[var(--g-border)] bg-[var(--input-bg)] px-2 text-sm text-[var(--t-hi)]"
                     value={format(value.from, "yyyy-MM-dd")}
                     onChange={(e) =>
                       onChange({
@@ -91,7 +91,7 @@ export function DatePicker({
                   To
                   <input
                     type="date"
-                    className="mt-1 h-10 w-full rounded-[12px] border border-white/10 bg-white/[0.04] px-2 text-sm text-[var(--t-hi)]"
+                    className="mt-1 h-10 w-full rounded-[12px] border border-[var(--g-border)] bg-[var(--input-bg)] px-2 text-sm text-[var(--t-hi)]"
                     value={format(value.to, "yyyy-MM-dd")}
                     onChange={(e) =>
                       onChange({

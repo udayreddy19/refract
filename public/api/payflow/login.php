@@ -7,64 +7,106 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $body = read_json_body();
 $agentId = strtoupper(trim((string) ($body['agentId'] ?? '')));
-$name = trim((string) ($body['name'] ?? $agentId));
+$name = trim((string) ($body['name'] ?? ''));
 $email = trim((string) ($body['email'] ?? ''));
 $mobile = trim((string) ($body['mobile'] ?? ''));
+$passcode = (string) ($body['passcode'] ?? '');
 $idToken = payflow_get_bearer_token();
+
+function payflow_login_success(array $agent, string $auth): void
+{
+    $uid = (string) $agent['uid'];
+    $_SESSION['payflow_agent'] = [
+        'uid' => $uid,
+        'agentId' => (string) $agent['agentId'],
+        'email' => (string) ($agent['email'] ?? ''),
+        'name' => (string) ($agent['name'] ?? $agent['agentId']),
+        'mobile' => (string) ($agent['mobile'] ?? ''),
+        'firebaseUid' => $agent['firebaseUid'] ?? null,
+    ];
+    payflow_agent_touch_login($uid);
+    json_response([
+        'success' => true,
+        'agent' => [
+            'uid' => $uid,
+            'id' => $uid,
+            'agentId' => (string) $agent['agentId'],
+            'email' => (string) ($agent['email'] ?? ''),
+            'name' => (string) ($agent['name'] ?? $agent['agentId']),
+            'mobile' => (string) ($agent['mobile'] ?? ''),
+            'avatarInitials' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', (string) ($agent['name'] ?? $agent['agentId'])) ?: 'PF', 0, 2)),
+        ],
+        'balance' => payflow_wallet_get($uid),
+        'token' => 'session',
+        'auth' => $auth,
+    ]);
+}
 
 if ($idToken !== '') {
     $fb = payflow_verify_firebase_id_token($idToken);
-    if ($fb) {
-        $email = (string) ($fb['email'] ?? $email);
-        $name = (string) ($fb['displayName'] ?? $name);
-        if ($agentId === '') {
-            $agentId = strtoupper(explode('@', $email)[0] ?: 'AGENT');
-        }
-        $uid = 'agent_' . ($fb['localId'] ?? bin2hex(random_bytes(6)));
-        $_SESSION['payflow_agent'] = [
-            'uid' => $uid,
-            'agentId' => $agentId,
-            'email' => $email,
-            'name' => $name !== '' ? $name : $agentId,
-            'mobile' => $mobile,
-            'firebaseUid' => $fb['localId'] ?? null,
-        ];
-        json_response([
-            'success' => true,
-            'agent' => $_SESSION['payflow_agent'],
-            'balance' => payflow_wallet_get($uid),
-            'auth' => 'firebase',
-        ]);
+    if (!$fb) {
+        json_response(['error' => 'Invalid Firebase session. Sign in again.'], 401);
     }
+    $email = (string) ($fb['email'] ?? $email);
+    $name = (string) ($fb['displayName'] ?? $name);
+    if ($agentId === '' && $email !== '') {
+        $agentId = strtoupper(explode('@', $email)[0] ?: '');
+    }
+
+    $registered = payflow_find_agent($agentId !== '' ? $agentId : null, null, $mobile !== '' ? $mobile : null);
+    if (!$registered && $email !== '') {
+        foreach (payflow_agents_all() as $row) {
+            if (strcasecmp((string) ($row['email'] ?? ''), $email) === 0) {
+                $registered = $row;
+                break;
+            }
+        }
+    }
+    if (!$registered) {
+        json_response(['error' => 'No retailer account found for this login. Ask admin to create your Agent ID.'], 403);
+    }
+    if (($registered['status'] ?? 'active') === 'disabled') {
+        json_response(['error' => 'This retailer account is disabled. Contact support.'], 403);
+    }
+
+    $registered['email'] = $email !== '' ? $email : (string) ($registered['email'] ?? '');
+    $registered['name'] = $name !== '' ? $name : (string) ($registered['name'] ?? $registered['agentId']);
+    $registered['firebaseUid'] = $fb['localId'] ?? null;
+    payflow_login_success($registered, 'firebase');
 }
 
-// Seeded agent accounts (mirrors frontend mock registry for PHP session)
-$accounts = [
-    'AGENT1001' => ['passcode' => '123456', 'name' => 'AGENT USER', 'email' => 'agent@example.com', 'mobile' => '9000000000'],
-    'AGENTPROD' => ['passcode' => 'PayFlow@2026', 'name' => 'PROD AGENT', 'email' => 'prod@payflow.agent', 'mobile' => '9876543210'],
-];
+if ($agentId === '' && $mobile === '') {
+    json_response(['error' => 'Agent ID or mobile is required'], 400);
+}
+if ($passcode === '') {
+    json_response(['error' => 'Passcode is required'], 400);
+}
 
-$passcode = (string) ($body['passcode'] ?? '');
-if ($agentId === '' || !isset($accounts[$agentId])) {
+$agent = payflow_find_agent($agentId !== '' ? $agentId : null, null, $mobile !== '' ? $mobile : null);
+if (!$agent) {
     json_response(['error' => 'Invalid Agent ID or Passcode'], 401);
 }
-if ($passcode !== '' && $passcode !== $accounts[$agentId]['passcode']) {
+if (($agent['status'] ?? 'active') === 'disabled') {
+    json_response(['error' => 'This retailer account is disabled. Contact support.'], 403);
+}
+
+$stored = (string) ($agent['passcode'] ?? '');
+if (!payflow_verify_passcode($passcode, $stored)) {
     json_response(['error' => 'Invalid Agent ID or Passcode'], 401);
 }
 
-$acc = $accounts[$agentId];
-$uid = 'agent_' . strtolower($agentId);
-$_SESSION['payflow_agent'] = [
-    'uid' => $uid,
-    'agentId' => $agentId,
-    'email' => $email !== '' ? $email : $acc['email'],
-    'name' => $name !== '' ? $name : $acc['name'],
-    'mobile' => $mobile !== '' ? $mobile : $acc['mobile'],
-];
+if (payflow_passcode_needs_rehash($stored)) {
+    payflow_agent_set_passcode((string) $agent['uid'], $passcode);
+}
 
-json_response([
-    'success' => true,
-    'agent' => $_SESSION['payflow_agent'],
-    'balance' => payflow_wallet_get($uid),
-    'auth' => 'local',
-]);
+if ($email !== '') {
+    $agent['email'] = $email;
+}
+if ($name !== '') {
+    $agent['name'] = $name;
+}
+if ($mobile !== '') {
+    $agent['mobile'] = preg_replace('/\D+/', '', $mobile);
+}
+
+payflow_login_success($agent, 'local');

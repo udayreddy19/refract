@@ -58,7 +58,7 @@ export function FileUpload({
       </label>
       <div
         className={cn(
-          "rounded-[14px] border border-dashed border-white/15 bg-white/[0.03] p-4 transition-colors hover:border-white/30",
+          "rounded-[14px] border border-dashed border-[var(--g-border-hi)] bg-[var(--input-bg)] p-4 transition-colors hover:border-[var(--brand)]",
           (error || localError) && "border-[var(--red)]/50"
         )}
       >
@@ -75,7 +75,7 @@ export function FileUpload({
             onClick={() => inputRef.current?.click()}
             className="flex w-full flex-col items-center gap-2 py-4 text-sm text-[var(--t-mid)]"
           >
-            <Upload className="h-6 w-6 text-[var(--t-hi)]" />
+            <Upload className="h-6 w-6 text-[var(--brand)]" />
             <span>Click to upload receipt</span>
             <span className="text-xs text-[var(--t-low)]">
               JPG, PNG, GIF · Max {maxSizeMB}MB
@@ -88,7 +88,7 @@ export function FileUpload({
               <img
                 src={preview}
                 alt="Receipt preview"
-                className="h-16 w-16 rounded-lg border border-white/10 object-cover"
+                className="h-16 w-16 rounded-lg border border-[var(--g-border)] object-cover"
               />
             )}
             <div className="min-w-0 flex-1">
@@ -103,7 +103,7 @@ export function FileUpload({
                 handleFile(null);
                 if (inputRef.current) inputRef.current.value = "";
               }}
-              className="rounded-lg p-1.5 text-[var(--t-mid)] hover:bg-white/10 hover:text-[var(--red)]"
+              className="rounded-lg p-1.5 text-[var(--t-mid)] hover:bg-[var(--red-bg)] hover:text-[var(--red)]"
               aria-label="Remove file"
             >
               <X className="h-4 w-4" />

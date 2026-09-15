@@ -58,6 +58,12 @@ if (!defined('GOOGLE_REDIRECT_URI')) {
 if (!defined('APP_URL')) {
     define('APP_URL', getenv('APP_URL') ?: 'https://reconcilex.in');
 }
+if (!defined('APP_ENV')) {
+    define('APP_ENV', getenv('APP_ENV') ?: 'production');
+}
+if (!defined('PAYFLOW_ALLOW_DEMO')) {
+    define('PAYFLOW_ALLOW_DEMO', getenv('PAYFLOW_ALLOW_DEMO') ?: '0');
+}
 if (!defined('ADMIN_PASSWORD')) {
     define('ADMIN_PASSWORD', getenv('ADMIN_PASSWORD') ?: '');
 }
@@ -99,7 +105,23 @@ function google_is_configured(): bool
 
 function admin_password_configured(): bool
 {
-    return ADMIN_PASSWORD !== '' && ADMIN_PASSWORD !== 'change-me';
+    $p = ADMIN_PASSWORD;
+    if ($p === '' || strlen($p) < 12) {
+        return false;
+    }
+    $blocked = [
+        'change-me',
+        'change-me-to-a-long-random-password',
+        'password',
+        'admin',
+        'admin123',
+    ];
+    foreach ($blocked as $b) {
+        if (strcasecmp($p, $b) === 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function razorpay_is_configured(): bool

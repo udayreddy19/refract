@@ -46,9 +46,9 @@ export function DataTable<T>({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="overflow-x-auto rounded-[16px] border border-white/10 bg-white/[0.02]">
+      <div className="overflow-x-auto rounded-[16px] border border-[var(--g-border)] bg-[var(--surface)]">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-white/10 bg-white/[0.03]">
+          <thead className="border-b border-[var(--g-border)] bg-[var(--input-bg)]">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => (
@@ -67,10 +67,10 @@ export function DataTable<T>({
           <tbody>
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-white/[0.06]">
+                <tr key={i} className="border-b border-[var(--g-border-lo)]">
                   {columns.map((_, j) => (
                     <td key={j} className="px-4 py-3">
-                      <div className="h-4 w-24 animate-pulse rounded bg-white/10" />
+                      <div className="h-4 w-24 animate-pulse rounded bg-[var(--input-bg)]" />
                     </td>
                   ))}
                 </tr>
@@ -85,7 +85,7 @@ export function DataTable<T>({
               table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-white/[0.06] last:border-0 transition-colors hover:bg-white/[0.03]"
+                  className="border-b border-[var(--g-border-lo)] last:border-0 transition-colors hover:bg-[var(--g-bg-hover)]"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 text-[var(--t-hi)]">
@@ -103,13 +103,13 @@ export function DataTable<T>({
           <div className="flex items-center gap-2 text-sm text-[var(--t-mid)]">
             <span>Rows per page</span>
             <select
-              className="h-9 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[var(--t-hi)]"
+              className="h-9 rounded-full border border-[var(--g-border)] bg-[var(--input-bg)] px-3 text-[var(--t-hi)]"
               value={pageSize}
               onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
               aria-label="Rows per page"
             >
               {[10, 25, 50, 100].map((n) => (
-                <option key={n} value={n} className="bg-[#0c0d18]">
+                <option key={n} value={n}>
                   {n}
                 </option>
               ))}
@@ -123,7 +123,7 @@ export function DataTable<T>({
               type="button"
               disabled={page <= 1}
               onClick={() => onPageChange(page - 1)}
-              className="h-9 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-[var(--t-mid)] disabled:opacity-40 hover:bg-white/[0.08] hover:text-[var(--t-hi)]"
+              className="h-9 rounded-full border border-[var(--g-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--t-mid)] disabled:opacity-40 hover:bg-[var(--brand-soft)] hover:text-[var(--t-hi)]"
             >
               Previous
             </button>
@@ -131,7 +131,7 @@ export function DataTable<T>({
               type="button"
               disabled={page >= totalPages}
               onClick={() => onPageChange(page + 1)}
-              className="h-9 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-[var(--t-mid)] disabled:opacity-40 hover:bg-white/[0.08] hover:text-[var(--t-hi)]"
+              className="h-9 rounded-full border border-[var(--g-border)] bg-[var(--input-bg)] px-4 text-sm text-[var(--t-mid)] disabled:opacity-40 hover:bg-[var(--brand-soft)] hover:text-[var(--t-hi)]"
             >
               Next
             </button>

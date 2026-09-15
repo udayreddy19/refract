@@ -6,21 +6,22 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:pointer-events-none disabled:opacity-30",
+  "relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]/30 disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       variant: {
         primary:
-          "bg-[var(--btn-primary-bg)] text-[var(--btn-primary-text)] border-t border-[var(--btn-primary-border-top)] border-x border-[var(--btn-primary-border)] border-b border-[var(--btn-primary-border-bottom)] shadow-[var(--s-btn-w)] hover:bg-[var(--btn-primary-bg-hover)] hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-[var(--s-btn-wh)] active:scale-[0.97]",
+          "bg-[var(--btn-primary-bg)] text-[var(--btn-primary-text)] border border-[var(--btn-primary-border)] shadow-[var(--s-btn-w)] hover:bg-[var(--btn-primary-bg-hover)] hover:-translate-y-0.5 hover:shadow-[var(--s-btn-wh)] active:scale-[0.97]",
         secondary:
-          "bg-white/[0.07] text-[var(--t-mid)] backdrop-blur-md border-t border-white/20 border-x border-white/10 border-b border-white/[0.04] shadow-[0_2px_12px_rgba(0,0,0,0.40)] hover:bg-white/12 hover:text-[var(--t-hi)] hover:-translate-y-px",
+          "bg-[var(--surface)] text-[var(--t-hi)] border border-[var(--g-border)] shadow-sm hover:bg-[var(--brand-soft)] hover:text-[var(--brand-deep)] hover:-translate-y-px",
         outline:
-          "border border-white/20 bg-transparent text-[var(--t-hi)] hover:bg-white/10",
-        ghost: "text-[var(--t-mid)] hover:bg-white/[0.06] hover:text-[var(--t-hi)] rounded-[10px]",
+          "border border-[var(--g-border)] bg-transparent text-[var(--t-hi)] hover:bg-[var(--brand-soft)]",
+        ghost:
+          "text-[var(--t-mid)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-deep)] rounded-[12px]",
         danger:
-          "bg-[var(--red)]/90 text-white border border-[var(--red-border)] hover:bg-[var(--red)]",
+          "bg-[var(--red)] text-white border border-[var(--red-border)] hover:opacity-95",
         success:
-          "bg-[var(--green)]/90 text-[#04120c] border border-[var(--green-border)] hover:bg-[var(--green)]",
+          "bg-[var(--green)] text-white border border-[var(--green-border)] hover:opacity-95",
       },
       size: {
         sm: "h-9 px-4 text-[13px]",
@@ -50,7 +51,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       {(variant === "primary" || !variant) && (
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-[inherit] bg-gradient-to-b from-white/20 to-transparent"
+          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-[inherit] bg-gradient-to-b from-white/25 to-transparent"
         />
       )}
       {loading && <Loader2 className="relative h-4 w-4 animate-spin" aria-hidden />}

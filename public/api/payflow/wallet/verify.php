@@ -43,10 +43,16 @@ if ($provider === 'RAZORPAY') {
     $rzpPaymentId = trim((string) ($body['razorpay_payment_id'] ?? ''));
     $rzpSignature = trim((string) ($body['razorpay_signature'] ?? ''));
 
-    if (!empty($deposit['demoMode']) || payflow_demo_mode() || !razorpay_is_configured()) {
+    if (!empty($deposit['demoMode'])) {
+        if (!payflow_demo_mode()) {
+            json_response(['error' => 'Demo deposits are disabled in production.'], 403);
+        }
         $paymentId = $rzpPaymentId !== '' ? $rzpPaymentId : ('pay_demo_' . time());
         $utr = 'DEMO' . time();
     } else {
+        if (!razorpay_is_configured()) {
+            json_response(['error' => 'Razorpay is not configured.'], 503);
+        }
         if ($rzpPaymentId === '' || $rzpSignature === '') {
             json_response(['error' => 'Missing Razorpay payment signature'], 400);
         }
@@ -72,10 +78,16 @@ if ($provider === 'RAZORPAY') {
 }
 
 if ($provider === 'CASHFREE') {
-    if (!empty($deposit['demoMode']) || payflow_demo_mode() || !cashfree_is_configured()) {
+    if (!empty($deposit['demoMode'])) {
+        if (!payflow_demo_mode()) {
+            json_response(['error' => 'Demo deposits are disabled in production.'], 403);
+        }
         $paymentId = 'cf_demo_' . time();
         $utr = 'DEMOCF' . time();
     } else {
+        if (!cashfree_is_configured()) {
+            json_response(['error' => 'Cashfree is not configured.'], 503);
+        }
         $api = cashfree_api('GET', 'orders/' . rawurlencode($orderId) . '/payments');
         if (empty($api['ok'])) {
             json_response(['error' => $api['error'] ?: 'Could not fetch Cashfree payment'], 502);
@@ -103,41 +115,47 @@ if ($provider === 'CASHFREE') {
     }
 }
 
-// Idempotent credit
-$already = false;
-mutate_store('payflow_deposits.json', function ($rows) use ($depositId, $paymentId, $utr, &$already) {
+// Idempotent credit — claim once via _credited
+$shouldCredit = false;
+mutate_store('payflow_deposits.json', function ($rows) use ($depositId, $paymentId, $utr, &$shouldCredit) {
     if (!is_array($rows)) $rows = [];
     foreach ($rows as $i => $row) {
-        if (($row['id'] ?? '') === $depositId) {
-            if (($row['status'] ?? '') === 'PAID') {
-                $already = true;
-                return $rows;
-            }
-            $rows[$i]['status'] = 'PAID';
-            $rows[$i]['paymentId'] = $paymentId;
-            $rows[$i]['utr'] = $utr;
-            $rows[$i]['updatedAt'] = gmdate('c');
-            $rows[$i]['paidAt'] = gmdate('c');
+        if (($row['id'] ?? '') !== $depositId) {
+            continue;
         }
+        if (!empty($row['_credited']) || ($row['status'] ?? '') === 'PAID') {
+            $shouldCredit = false;
+            return $rows;
+        }
+        $rows[$i]['status'] = 'PAID';
+        $rows[$i]['paymentId'] = $paymentId;
+        $rows[$i]['utr'] = $utr;
+        $rows[$i]['updatedAt'] = gmdate('c');
+        $rows[$i]['paidAt'] = gmdate('c');
+        $rows[$i]['_credited'] = true;
+        $shouldCredit = true;
+        break;
     }
     return $rows;
 }, []);
 
-$balance = $already
-    ? payflow_wallet_get($agent['uid'])
-    : payflow_wallet_credit($agent['uid'], $amount, [
+$balance = $shouldCredit
+    ? payflow_wallet_credit($agent['uid'], $amount, [
         'provider' => $provider,
+        'type' => 'wallet_add',
         'depositId' => $depositId,
         'paymentId' => $paymentId,
         'utr' => $utr,
         'orderId' => $orderId,
-    ]);
+        'agentId' => $agent['agentId'] ?? '',
+    ])
+    : payflow_wallet_get($agent['uid']);
 
 json_response([
     'success' => true,
     'balance' => $balance,
     'utr' => $utr,
     'paymentId' => $paymentId,
-    'demoMode' => !empty($deposit['demoMode']) || payflow_demo_mode(),
-    'alreadyProcessed' => $already,
+    'demoMode' => !empty($deposit['demoMode']),
+    'alreadyProcessed' => !$shouldCredit,
 ]);

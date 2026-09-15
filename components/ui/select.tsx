@@ -25,7 +25,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           id={selectId}
           className={cn(
-            "flex h-11 w-full rounded-[14px] border border-white/10 bg-white/[0.04] px-3.5 text-sm text-[var(--t-hi)] backdrop-blur-sm transition-colors focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-11 w-full rounded-[14px] border border-[var(--g-border)] bg-[var(--input-bg)] px-3.5 text-sm text-[var(--t-hi)] transition-colors focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/20 disabled:cursor-not-allowed disabled:opacity-50",
             error && "border-[var(--red)]/50",
             className
           )}
@@ -34,7 +34,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         >
           {placeholder && <option value="">{placeholder}</option>}
           {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-[#0c0d18] text-white">
+            <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}

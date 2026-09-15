@@ -13,7 +13,7 @@ export function Tabs({ tabs, active, onChange, className }: TabsProps) {
   return (
     <div
       className={cn(
-        "flex flex-wrap gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1 backdrop-blur-md",
+        "flex flex-wrap gap-1 rounded-full border border-[var(--g-border)] bg-[var(--input-bg)] p-1",
         className
       )}
       role="tablist"
@@ -28,8 +28,8 @@ export function Tabs({ tabs, active, onChange, className }: TabsProps) {
           className={cn(
             "relative rounded-full px-4 py-2 text-sm font-medium transition-all",
             active === tab.id
-              ? "bg-white text-[#0a0b10] shadow-[var(--s-btn-w)]"
-              : "text-[var(--t-mid)] hover:bg-white/[0.06] hover:text-[var(--t-hi)]"
+              ? "bg-[var(--brand)] text-white shadow-[var(--s-btn-w)]"
+              : "text-[var(--t-mid)] hover:bg-[var(--brand-soft)] hover:text-[var(--t-hi)]"
           )}
         >
           {tab.label}

@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { CURRENT_USER } from "@/lib/mock-data";
 import { authService } from "@/lib/services";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
@@ -53,7 +52,7 @@ function Toggle({
         onClick={() => onChange(!checked)}
         className={cn(
           "relative h-6 w-11 shrink-0 rounded-full transition-colors",
-          checked ? "bg-white" : "bg-white/15"
+          checked ? "bg-[var(--brand)]" : "bg-[var(--t-dim)]"
         )}
       >
         <span
@@ -73,7 +72,7 @@ export default function ProfilePage() {
   const setTwoFactor = useAppStore((s) => s.setTwoFactor);
   const loginNotifications = useAppStore((s) => s.loginNotifications);
   const setLoginNotifications = useAppStore((s) => s.setLoginNotifications);
-  const user = storeUser ?? CURRENT_USER;
+  const user = storeUser;
 
   const [passcodeOpen, setPasscodeOpen] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
@@ -92,6 +91,14 @@ export default function ProfilePage() {
     defaultValues: { current: "", next: "", confirm: "" },
   });
 
+  if (!user) {
+    return (
+      <PageContainer>
+        <p className="text-sm text-[var(--t-mid)]">Loading profile…</p>
+      </PageContainer>
+    );
+  }
+
   const closePasscode = () => {
     setPasscodeOpen(false);
     reset();
@@ -103,7 +110,7 @@ export default function ProfilePage() {
   const onChangePasscode = async (values: PasscodeValues) => {
     setSubmitting(true);
     try {
-      await authService.changePasscode(values.current, values.next, user.agentId);
+      await authService.changePasscode(values.current, values.next);
       closePasscode();
       setSuccessOpen(true);
       toast.success("Passcode updated successfully");
@@ -116,9 +123,18 @@ export default function ProfilePage() {
 
   return (
     <PageContainer>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Profile & Settings</h1>
-        <p className="mt-1 text-sm text-muted">Manage your agent account and security preferences</p>
+      <div className="wallet-banner mb-6 p-5">
+        <div className="relative z-[1]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">
+            Account
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-semibold text-white">
+            Profile & Settings
+          </h1>
+          <p className="mt-1 text-sm text-white/75">
+            Manage your agent account and security preferences
+          </p>
+        </div>
       </div>
 
       <div className="mx-auto max-w-2xl space-y-6">
@@ -133,7 +149,7 @@ export default function ProfilePage() {
         <Card
           title="Authentication"
           action={
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-[var(--t-hi)]">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand-deep)]">
               <KeyRound className="h-4 w-4" />
             </span>
           }
@@ -149,7 +165,7 @@ export default function ProfilePage() {
         <Card
           title="Security"
           action={
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-[var(--t-hi)]">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brand-soft)] text-[var(--brand-deep)]">
               <Shield className="h-4 w-4" />
             </span>
           }

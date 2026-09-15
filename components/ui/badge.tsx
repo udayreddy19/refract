@@ -5,7 +5,7 @@ const statusStyles: Record<TransactionStatus, string> = {
   success: "bg-[var(--green-bg)] text-[var(--green)] border border-[var(--green-border)]",
   failed: "bg-[var(--red-bg)] text-[var(--red)] border border-[var(--red-border)]",
   pending: "bg-[var(--yellow-bg)] text-[var(--yellow)] border border-[var(--yellow-border)]",
-  refund: "bg-[var(--blue-bg)] text-[var(--blue)] border border-white/10",
+  refund: "bg-[var(--blue-bg)] text-[var(--blue)] border border-[var(--g-border)]",
   processing: "bg-[var(--yellow-bg)] text-[var(--yellow)] border border-[var(--yellow-border)]",
 };
 
@@ -30,7 +30,9 @@ export function Badge({
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-        status ? statusStyles[status] : "bg-white/5 text-[var(--t-mid)] border border-white/10",
+        status
+          ? statusStyles[status]
+          : "border border-[var(--g-border)] bg-[var(--input-bg)] text-[var(--t-mid)]",
         className
       )}
     >

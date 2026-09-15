@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Sora } from "next/font/google";
-import { Toaster } from "sonner";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { AppToaster } from "@/components/theme/AppToaster";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -22,9 +23,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PayFlow Agent — Retailer Portal",
+  title: "PayFlow Agent — Retailer Wallet",
   description:
-    "Professional payment retailer and agent portal for bill payments, wallet, QR collection, and reports.",
+    "UPI-style retailer portal for bill payments, wallet top-ups, QR collection, and reports.",
 };
 
 export default function RootLayout({
@@ -36,8 +37,16 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${dmSans.variable} ${sora.variable} ${jetbrains.variable} h-full`}
-      data-theme="dark"
+      data-theme="light"
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem('payflow-agent-store');if(!s)return;var t=JSON.parse(s).state&&JSON.parse(s).state.theme;if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="page-root min-h-full font-sans antialiased">
         <div className="ambient-bg" aria-hidden="true">
           <div className="orb orb-1" />
@@ -45,20 +54,10 @@ export default function RootLayout({
           <div className="orb orb-3" />
           <div className="orb orb-4" />
         </div>
-        {children}
-        <Toaster
-          theme="dark"
-          position="top-right"
-          richColors
-          closeButton
-          toastOptions={{
-            style: {
-              background: "rgba(20, 22, 34, 0.92)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              backdropFilter: "blur(20px)",
-            },
-          }}
-        />
+        <ThemeProvider>
+          {children}
+          <AppToaster />
+        </ThemeProvider>
       </body>
     </html>
   );

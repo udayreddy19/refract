@@ -191,6 +191,18 @@ export default function BillPaymentsPage() {
 
   return (
     <PageContainer>
+      <div className="wallet-banner mb-5 p-5">
+        <div className="relative z-[1]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">
+            Recharge & Bills
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-semibold text-white">
+            Pay utility bills instantly
+          </h1>
+          <p className="mt-1 text-sm text-white/75">Service charge ₹5 · Wallet preferred</p>
+        </div>
+      </div>
+
       <Tabs
         tabs={[
           { id: "payments", label: "Bill Payments" },
@@ -205,8 +217,8 @@ export default function BillPaymentsPage() {
         <>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Bill Payments</h2>
-              <p className="text-sm text-muted">Charges: ₹5</p>
+              <h2 className="text-base font-semibold text-foreground">Select a category</h2>
+              <p className="text-sm text-muted">Electricity, water, mobile & more</p>
             </div>
           </div>
 
@@ -286,8 +298,8 @@ export default function BillPaymentsPage() {
                           className={cn(
                             "flex cursor-pointer items-center gap-3 rounded-[14px] border px-3 py-3 text-sm",
                             method === m.id
-                              ? "border-white/25 bg-white/10 text-[var(--t-hi)]"
-                              : "border-white/10 text-[var(--t-mid)]"
+                              ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--t-hi)]"
+                              : "border-[var(--g-border)] text-[var(--t-mid)]"
                           )}
                         >
                           <input

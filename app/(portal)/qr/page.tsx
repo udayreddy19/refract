@@ -205,9 +205,16 @@ export default function QRCollectionPage() {
 
   return (
     <PageContainer>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">QR Collection</h1>
-        <p className="mt-1 text-sm text-muted">Collect payments via Unisuspe QR and upload pending receipts</p>
+      <div className="wallet-banner mb-6 p-5">
+        <div className="relative z-[1]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">
+            Scan & Pay
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-semibold text-white">QR Collection</h1>
+          <p className="mt-1 text-sm text-white/75">
+            Collect via Unisuspe QR and upload pending receipts
+          </p>
+        </div>
       </div>
 
       <Card className="mb-6" title="QR Pricing">
@@ -251,7 +258,7 @@ export default function QRCollectionPage() {
                 </>
               ) : (
                 <>
-                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-white border border-border">
+                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl border border-[var(--g-border)] bg-[var(--surface)]">
                     <QrCode className="h-12 w-12 text-muted opacity-40" />
                   </div>
                   <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-muted">QR Disabled</p>
@@ -333,7 +340,7 @@ export default function QRCollectionPage() {
               placeholder="Search transaction, customer, mobile, UTR"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-11 w-full rounded-[10px] border border-white/10 bg-white/[0.04] pl-10 pr-3 text-sm focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/10"
+              className="h-11 w-full rounded-[10px] border border-[var(--g-border)] bg-[var(--input-bg)] pl-10 pr-3 text-sm text-[var(--t-hi)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-soft)]"
             />
           </div>
           <Input

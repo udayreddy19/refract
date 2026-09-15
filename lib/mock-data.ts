@@ -1,63 +1,12 @@
 import { subDays, format, startOfDay, endOfDay } from "date-fns";
 import type {
-  AgentUser,
   BankAccount,
   BillCategory,
   ChartPoint,
   Transaction,
 } from "./types";
 
-export const MOCK_CREDENTIALS = {
-  agentId: "AGENT1001",
-  passcode: "123456",
-} as const;
-
-/** Production + demo agent accounts (client mock auth until backend is wired) */
-export type AgentAccount = AgentUser & { passcode: string };
-
-export const AGENT_ACCOUNTS: AgentAccount[] = [
-  {
-    id: "u1",
-    name: "AGENT USER",
-    agentId: "AGENT1001",
-    mobile: "+91 9000000000",
-    email: "agent@example.com",
-    avatarInitials: "AU",
-    passcode: "123456",
-  },
-  {
-    id: "u-prod",
-    name: "PROD AGENT",
-    agentId: "AGENTPROD",
-    mobile: "+91 9876543210",
-    email: "prod@payflow.agent",
-    avatarInitials: "PA",
-    passcode: "PayFlow@2026",
-  },
-];
-
-export function findAgentAccount(agentIdOrMobile: string, passcode: string): AgentUser | null {
-  const key = agentIdOrMobile.trim().toUpperCase();
-  const digits = agentIdOrMobile.replace(/\D/g, "");
-  const account = AGENT_ACCOUNTS.find((a) => {
-    const idMatch = a.agentId.toUpperCase() === key;
-    const mobileMatch = digits.length >= 10 && a.mobile.replace(/\D/g, "").endsWith(digits.slice(-10));
-    return (idMatch || mobileMatch) && a.passcode === passcode;
-  });
-  if (!account) return null;
-  const { passcode: _, ...user } = account;
-  return user;
-}
-
-export const CURRENT_USER: AgentUser = {
-  id: AGENT_ACCOUNTS[0].id,
-  name: AGENT_ACCOUNTS[0].name,
-  agentId: AGENT_ACCOUNTS[0].agentId,
-  mobile: AGENT_ACCOUNTS[0].mobile,
-  email: AGENT_ACCOUNTS[0].email,
-  avatarInitials: AGENT_ACCOUNTS[0].avatarInitials,
-};
-
+/** UI catalog data only — no login credentials live here */
 
 export const BILL_CATEGORIES: BillCategory[] = [
   { id: "credit-card", name: "Credit Card", icon: "CreditCard", color: "#126B73", bg: "#E6F3F4" },
@@ -96,98 +45,11 @@ export const PAYMENT_CATEGORIES: Record<string, string[]> = {
 
 export const CARD_TYPES = ["Credit Card", "Debit Card", "Prepaid Card"];
 
-const customers = [
-  "Rahul Sharma",
-  "Priya Patel",
-  "Amit Kumar",
-  "Sneha Reddy",
-  "Vikram Singh",
-  "Ananya Iyer",
-  "Rohit Mehta",
-  "Kavya Nair",
-  "Suresh Gupta",
-  "Meera Joshi",
-];
+export let MOCK_TRANSACTIONS: Transaction[] = [];
 
-const statuses = ["success", "failed", "pending", "refund", "processing"] as const;
-const types = ["payin", "payout", "bill", "wallet_add", "wallet_withdraw", "qr"] as const;
+export let MOCK_WALLET_BALANCE = 0;
 
-function seededRandom(seed: number) {
-  let s = seed;
-  return () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-const rand = seededRandom(42);
-
-function pick<T>(arr: readonly T[]): T {
-  return arr[Math.floor(rand() * arr.length)];
-}
-
-function makeTransactions(count: number): Transaction[] {
-  const list: Transaction[] = [];
-  for (let i = 0; i < count; i++) {
-    const daysAgo = Math.floor(rand() * 45);
-    const date = subDays(new Date(), daysAgo);
-    date.setHours(Math.floor(rand() * 14) + 8, Math.floor(rand() * 60));
-    const type = pick(types);
-    const nonProcessing = statuses.filter((s) => s !== "processing");
-    const status =
-      type === "wallet_withdraw" && rand() > 0.7
-        ? "processing"
-        : pick(nonProcessing);
-    const amount = Math.round((rand() * 45000 + 100) * 100) / 100;
-    const opening = 70000 + Math.round(rand() * 30000);
-    list.push({
-      id: `tx-${i + 1}`,
-      transactionId: `TXN${String(100000 + i)}`,
-      customerName: pick(customers),
-      mobile: `9${String(Math.floor(rand() * 1e9)).padStart(9, "0")}`,
-      type,
-      category: type === "bill" ? pick(BILL_CATEGORIES).name : undefined,
-      amount,
-      status,
-      utr: status === "success" || status === "processing" ? `UTR${Math.floor(rand() * 1e12)}` : undefined,
-      createdAt: date.toISOString(),
-      reference: `REF${Math.floor(rand() * 1e8)}`,
-      openingBalance: opening,
-      closingBalance: type.includes("withdraw") || type === "payout" || type === "bill"
-        ? opening - amount
-        : opening + amount,
-      bankAccount: type === "wallet_withdraw" ? `XXXX${Math.floor(1000 + rand() * 9000)}` : undefined,
-      receiptName: type === "qr" ? `receipt-${i + 1}.jpg` : undefined,
-      email: `customer${i}@example.com`,
-    });
-  }
-  return list.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-}
-
-export let MOCK_TRANSACTIONS: Transaction[] = makeTransactions(120);
-
-export let MOCK_WALLET_BALANCE = 82265;
-
-export let MOCK_BANK_ACCOUNTS: BankAccount[] = [
-  {
-    id: "ba1",
-    holderName: "AGENT USER",
-    accountNumber: "5020004292123",
-    ifsc: "HDFC0001234",
-    bankName: "HDFC Bank",
-    fundType: "Wallet",
-    verified: true,
-  },
-  {
-    id: "ba2",
-    holderName: "AGENT USER",
-    accountNumber: "1234567890123",
-    ifsc: "SBIN0004567",
-    bankName: "State Bank of India",
-    fundType: "Wallet",
-    verified: true,
-  },
-];
+export let MOCK_BANK_ACCOUNTS: BankAccount[] = [];
 
 export const QR_PRICING = {
   name: "UNISUSPE",
@@ -197,33 +59,25 @@ export const QR_PRICING = {
   enabled: false,
 };
 
-export function getChartData(days: number): ChartPoint[] {
+export function getChartData(days: number, transactions: Transaction[] = []): ChartPoint[] {
   const points: ChartPoint[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = subDays(new Date(), i);
-    const dayTx = MOCK_TRANSACTIONS.filter((t) => {
+    const dayTx = transactions.filter((t) => {
       const td = new Date(t.createdAt);
       return td >= startOfDay(d) && td <= endOfDay(d);
     });
     points.push({
       label: days <= 1 ? format(d, "HH:00") : format(d, "dd MMM"),
-      payIn: dayTx.filter((t) => t.type === "payin").reduce((s, t) => s + t.amount, 0),
+      payIn: dayTx
+        .filter((t) => t.type === "payin" || t.type === "wallet_add" || t.type === "qr")
+        .reduce((s, t) => s + t.amount, 0),
       payOut: dayTx
-        .filter((t) => t.type === "payout" || t.type === "wallet_withdraw")
+        .filter((t) => t.type === "payout" || t.type === "wallet_withdraw" || t.type === "bill")
         .reduce((s, t) => s + t.amount, 0),
       success: dayTx.filter((t) => t.status === "success").length,
       failed: dayTx.filter((t) => t.status === "failed").length,
     });
-  }
-  if (days === 1) {
-    // hourly mock for today
-    return Array.from({ length: 8 }, (_, i) => ({
-      label: `${8 + i * 2}:00`,
-      payIn: Math.round(rand() * 80000 + 10000),
-      payOut: Math.round(rand() * 50000 + 5000),
-      success: Math.floor(rand() * 40 + 10),
-      failed: Math.floor(rand() * 5),
-    }));
   }
   return points;
 }

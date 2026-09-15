@@ -48,25 +48,28 @@ $deposit = [
 ];
 
 if ($provider === 'RAZORPAY') {
-    if ($demoMode || !razorpay_is_configured()) {
-        $deposit['orderId'] = 'order_demo_' . time();
-        $deposit['status'] = 'CREATED';
-        $deposit['demoMode'] = true;
-        mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
-            if (!is_array($rows)) $rows = [];
-            $rows[] = $deposit;
-            return $rows;
-        }, []);
-        json_response([
-            'success' => true,
-            'demoMode' => true,
-            'provider' => 'RAZORPAY',
-            'depositId' => $depositId,
-            'orderId' => $deposit['orderId'],
-            'amount' => $amount,
-            'amountPaise' => $amountPaise,
-            'keyId' => RAZORPAY_KEY_ID !== '' ? RAZORPAY_KEY_ID : 'rzp_test_demo',
-        ]);
+    if (!razorpay_is_configured()) {
+        if (payflow_demo_mode()) {
+            $deposit['orderId'] = 'order_demo_' . time();
+            $deposit['status'] = 'CREATED';
+            $deposit['demoMode'] = true;
+            mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
+                if (!is_array($rows)) $rows = [];
+                $rows[] = $deposit;
+                return $rows;
+            }, []);
+            json_response([
+                'success' => true,
+                'demoMode' => true,
+                'provider' => 'RAZORPAY',
+                'depositId' => $depositId,
+                'orderId' => $deposit['orderId'],
+                'amount' => $amount,
+                'amountPaise' => $amountPaise,
+                'keyId' => RAZORPAY_KEY_ID !== '' ? RAZORPAY_KEY_ID : 'rzp_test_demo',
+            ]);
+        }
+        json_response(['error' => 'Razorpay is not configured. Add live keys in api/secrets.php.'], 503);
     }
 
     $api = razorpay_api('POST', 'orders', [
@@ -104,26 +107,29 @@ if ($provider === 'RAZORPAY') {
 }
 
 // Cashfree
-if ($demoMode || !cashfree_is_configured()) {
-    $deposit['orderId'] = $depositId;
-    $deposit['paymentSessionId'] = 'session_demo_' . time();
-    $deposit['demoMode'] = true;
-    mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
-        if (!is_array($rows)) $rows = [];
-        $rows[] = $deposit;
-        return $rows;
-    }, []);
-    json_response([
-        'success' => true,
-        'demoMode' => true,
-        'provider' => 'CASHFREE',
-        'depositId' => $depositId,
-        'orderId' => $deposit['orderId'],
-        'paymentSessionId' => $deposit['paymentSessionId'],
-        'amount' => $amount,
-        'amountPaise' => $amountPaise,
-        'environment' => cashfree_environment(),
-    ]);
+if (!cashfree_is_configured()) {
+    if (payflow_demo_mode()) {
+        $deposit['orderId'] = $depositId;
+        $deposit['paymentSessionId'] = 'session_demo_' . time();
+        $deposit['demoMode'] = true;
+        mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
+            if (!is_array($rows)) $rows = [];
+            $rows[] = $deposit;
+            return $rows;
+        }, []);
+        json_response([
+            'success' => true,
+            'demoMode' => true,
+            'provider' => 'CASHFREE',
+            'depositId' => $depositId,
+            'orderId' => $deposit['orderId'],
+            'paymentSessionId' => $deposit['paymentSessionId'],
+            'amount' => $amount,
+            'amountPaise' => $amountPaise,
+            'environment' => cashfree_environment(),
+        ]);
+    }
+    json_response(['error' => 'Cashfree is not configured. Add live keys in api/secrets.php.'], 503);
 }
 
 $notifyUrl = rtrim(APP_URL, '/') . '/api/payflow/webhooks/cashfree.php';

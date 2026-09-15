@@ -178,9 +178,16 @@ export default function ReportsPage() {
 
   return (
     <PageContainer>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-foreground">Reports</h1>
-        <p className="mt-1 text-sm text-muted">Export and review transaction activity across products</p>
+      <div className="wallet-banner mb-6 p-5">
+        <div className="relative z-[1]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">
+            Statements
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-semibold text-white">Reports</h1>
+          <p className="mt-1 text-sm text-white/75">
+            Export and review transaction activity across products
+          </p>
+        </div>
       </div>
 
       <Tabs
@@ -210,7 +217,7 @@ export default function ReportsPage() {
               placeholder="Search transaction ID"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-11 w-full rounded-[10px] border border-white/10 bg-white/[0.04] pl-10 pr-3 text-sm focus:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/10"
+              className="h-11 w-full rounded-[10px] border border-[var(--g-border)] bg-[var(--input-bg)] pl-10 pr-3 text-sm text-[var(--t-hi)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-soft)]"
             />
           </div>
           <Input

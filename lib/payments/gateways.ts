@@ -10,7 +10,7 @@ export type ProvidersResponse = {
     environment?: string;
     keyId?: string;
   }>;
-  primary: PaymentProvider;
+  primary: PaymentProvider | null;
   demoMode: boolean;
 };
 

@@ -61,7 +61,7 @@ export function Modal({
         )}
       >
         {(title || description) && (
-          <div className="relative z-[1] flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+          <div className="relative z-[1] flex items-start justify-between gap-4 border-b border-[var(--g-border)] px-5 py-4">
             <div>
               {title && (
                 <h2
@@ -78,7 +78,7 @@ export function Modal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-[var(--t-mid)] hover:bg-white/10 hover:text-[var(--t-hi)]"
+              className="rounded-lg p-1.5 text-[var(--t-mid)] hover:bg-[var(--brand-soft)] hover:text-[var(--t-hi)]"
               aria-label="Close"
             >
               <X className="h-5 w-5" />

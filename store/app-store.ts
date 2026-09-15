@@ -3,20 +3,22 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AgentUser, NotificationItem } from "@/lib/types";
-import { CURRENT_USER, MOCK_WALLET_BALANCE } from "@/lib/mock-data";
 
 interface AppState {
   user: AgentUser | null;
   token: string | null;
   walletBalance: number;
+  theme: "light" | "dark";
   sidebarCollapsed: boolean;
   sidebarMobileOpen: boolean;
   notifications: NotificationItem[];
   twoFactorEnabled: boolean;
   loginNotifications: boolean;
-  setAuth: (user: AgentUser, token: string) => void;
+  setAuth: (user: AgentUser, token: string, balance?: number) => void;
   logout: () => void;
   setWalletBalance: (balance: number) => void;
+  setTheme: (theme: "light" | "dark") => void;
+  toggleTheme: () => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (v: boolean) => void;
   setSidebarMobileOpen: (v: boolean) => void;
@@ -30,30 +32,24 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       user: null,
       token: null,
-      walletBalance: MOCK_WALLET_BALANCE,
+      walletBalance: 0,
+      theme: "light",
       sidebarCollapsed: false,
       sidebarMobileOpen: false,
-      notifications: [
-        {
-          id: "n1",
-          title: "Withdrawal processing",
-          message: "Your withdrawal of ₹10,000 is being processed.",
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "n2",
-          title: "Bill payment success",
-          message: "Electricity bill paid successfully.",
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-      ],
+      notifications: [],
       twoFactorEnabled: false,
       loginNotifications: true,
-      setAuth: (user, token) => set({ user, token }),
-      logout: () => set({ user: null, token: null }),
+      setAuth: (user, token, balance) =>
+        set({
+          user,
+          token,
+          ...(typeof balance === "number" ? { walletBalance: balance } : {}),
+        }),
+      logout: () => set({ user: null, token: null, walletBalance: 0 }),
       setWalletBalance: (walletBalance) => set({ walletBalance }),
+      setTheme: (theme) => set({ theme }),
+      toggleTheme: () =>
+        set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
       toggleSidebar: () =>
         set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
@@ -71,6 +67,7 @@ export const useAppStore = create<AppState>()(
         user: s.user,
         token: s.token,
         walletBalance: s.walletBalance,
+        theme: s.theme,
         sidebarCollapsed: s.sidebarCollapsed,
         twoFactorEnabled: s.twoFactorEnabled,
         loginNotifications: s.loginNotifications,
@@ -78,5 +75,3 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
-
-export { CURRENT_USER };

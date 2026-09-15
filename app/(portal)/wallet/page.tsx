@@ -273,7 +273,8 @@ export default function WalletPage() {
   useEffect(() => {
     paymentService.getProviders().then((p) => {
       setDemoMode(p.demoMode);
-      setGateway(p.primary);
+      const enabled = p.providers.find((x) => x.enabled)?.id;
+      setGateway(p.primary || enabled || "RAZORPAY");
     });
   }, []);
 
@@ -314,7 +315,6 @@ export default function WalletPage() {
       });
 
       if (order.demoMode) {
-        // Local / keys-missing: simulate PSP success then credit via mock wallet
         const verified = await paymentService.verify({
           provider: gateway,
           depositId: order.depositId,
@@ -323,20 +323,9 @@ export default function WalletPage() {
           razorpay_signature: "demo",
           idToken: token || undefined,
         });
-        const result = await walletService.addFunds({
-          customerName: values.customerName,
-          mobile: values.mobile,
-          paymentCategory: values.paymentCategory,
-          cardType: values.cardType,
-          amount,
-        });
-        setWalletBalance(verified.balance > 0 ? verified.balance : result.balance);
+        setWalletBalance(verified.balance);
         resetAdd();
-        toast.success(
-          gateway === "RAZORPAY"
-            ? "Razorpay payment successful (demo)"
-            : "Cashfree payment successful (demo)"
-        );
+        toast.success("Demo payment credited to wallet");
         return;
       }
 
@@ -357,17 +346,7 @@ export default function WalletPage() {
           razorpay_signature: rzp.razorpay_signature,
           idToken: token || undefined,
         });
-        if (verified.balance > 0) setWalletBalance(verified.balance);
-        else {
-          const result = await walletService.addFunds({
-            customerName: values.customerName,
-            mobile: values.mobile,
-            paymentCategory: values.paymentCategory,
-            cardType: values.cardType,
-            amount,
-          });
-          setWalletBalance(result.balance);
-        }
+        setWalletBalance(verified.balance);
         resetAdd();
         toast.success("Razorpay payment successful");
         return;
@@ -387,17 +366,7 @@ export default function WalletPage() {
         orderId: order.orderId,
         idToken: token || undefined,
       });
-      if (verified.balance > 0) setWalletBalance(verified.balance);
-      else {
-        const result = await walletService.addFunds({
-          customerName: values.customerName,
-          mobile: values.mobile,
-          paymentCategory: values.paymentCategory,
-          cardType: values.cardType,
-          amount,
-        });
-        setWalletBalance(result.balance);
-      }
+      setWalletBalance(verified.balance);
       resetAdd();
       toast.success("Cashfree payment successful");
     } catch (e) {
@@ -485,16 +454,19 @@ export default function WalletPage() {
 
   return (
     <PageContainer>
-      <Card className="mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="wallet-banner mb-6 p-5 sm:p-6">
+        <div className="relative z-[1] flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-muted">Funds Wallet Balance</p>
-            <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/70">
+              Funds Wallet
+            </p>
+            <p className="mt-2 font-display text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               {formatINR(walletBalance)}
             </p>
+            <p className="mt-1 text-sm text-white/75">Available to spend & withdraw</p>
           </div>
           <Button
-            variant="secondary"
+            className="!border-white/30 !bg-white/15 !text-white hover:!bg-white/25"
             size="icon"
             onClick={refreshBalance}
             loading={refreshing}
@@ -503,7 +475,7 @@ export default function WalletPage() {
             {!refreshing && <RefreshCw className="h-4 w-4" />}
           </Button>
         </div>
-      </Card>
+      </div>
 
       <Tabs
         tabs={[
@@ -592,8 +564,8 @@ export default function WalletPage() {
                           className={cn(
                             "rounded-full border px-4 py-2 text-sm font-medium transition",
                             gateway === g
-                              ? "border-white/30 bg-white text-[#0a0b10]"
-                              : "border-white/10 bg-white/[0.04] text-[var(--t-mid)] hover:text-[var(--t-hi)]"
+                              ? "border-[var(--brand)] bg-[var(--brand)] text-white"
+                              : "border-[var(--g-border)] bg-[var(--input-bg)] text-[var(--t-mid)] hover:text-[var(--t-hi)]"
                           )}
                         >
                           {g === "RAZORPAY" ? "Razorpay" : "Cashfree"}
@@ -836,14 +808,16 @@ export default function WalletPage() {
                 className={cn(
                   "flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition",
                   active
-                    ? "border-white/25 bg-white/10"
-                    : "border-white/10 bg-white/[0.03] hover:border-white/25"
+                    ? "border-[var(--brand)] bg-[var(--brand-soft)]"
+                    : "border-[var(--g-border)] bg-[var(--input-bg)] hover:border-[var(--brand)]"
                 )}
               >
                 <span
                   className={cn(
                     "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-                    active ? "bg-white text-[#0a0b10]" : "bg-white/[0.06] text-[var(--t-hi)]"
+                    active
+                      ? "bg-[var(--brand)] text-white"
+                      : "bg-[var(--surface)] text-[var(--t-hi)]"
                   )}
                 >
                   <Icon className="h-5 w-5" />

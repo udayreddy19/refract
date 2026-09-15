@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { type ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
-import { Eye, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Eye,
+  QrCode,
+  Receipt,
+  Wallet,
+  BarChart3,
+  Plus,
+} from "lucide-react";
 import {
   CartesianGrid,
   Legend,
@@ -24,48 +34,49 @@ import { Button } from "@/components/ui/button";
 import { defaultRange, transactionService } from "@/lib/services";
 import type { ChartPoint, DashboardStats, DateRange, Transaction } from "@/lib/types";
 import { formatINR, formatNumber } from "@/lib/utils";
+import { useAppStore } from "@/store/app-store";
 
-function StatCard({
+const quickActions = [
+  { href: "/wallet", label: "Add Money", icon: Plus, tone: "bg-[var(--brand-soft)] text-[var(--brand-deep)]" },
+  { href: "/bill-payments", label: "Pay Bills", icon: Receipt, tone: "bg-[var(--green-bg)] text-[var(--green)]" },
+  { href: "/qr", label: "Scan QR", icon: QrCode, tone: "bg-[var(--yellow-bg)] text-[var(--yellow)]" },
+  { href: "/reports", label: "Reports", icon: BarChart3, tone: "bg-[var(--blue-bg)] text-[var(--blue)]" },
+  { href: "/wallet", label: "Wallet", icon: Wallet, tone: "bg-[var(--brand-soft)] text-[var(--brand)]" },
+];
+
+function StatMini({
   title,
   count,
   volume,
-  tone = "default",
+  tone,
 }: {
   title: string;
   count: number;
   volume: number;
-  tone?: "default" | "success" | "danger" | "warning" | "primary";
+  tone?: "success" | "danger" | "warning";
 }) {
-  const tones = {
-    default: "",
-    success: "!border-[var(--green-border)]",
-    danger: "!border-[var(--red-border)]",
-    warning: "!border-[var(--yellow-border)]",
-    primary: "!border-white/20",
-  };
-  const accents = {
-    default: "text-[var(--t-hi)]",
-    success: "text-[var(--green)]",
-    danger: "text-[var(--red)]",
-    warning: "text-[var(--yellow)]",
-    primary: "text-[var(--t-hi)]",
-  };
+  const accent =
+    tone === "success"
+      ? "text-[var(--green)]"
+      : tone === "danger"
+        ? "text-[var(--red)]"
+        : tone === "warning"
+          ? "text-[var(--yellow)]"
+          : "text-[var(--t-hi)]";
   return (
-    <div className={`glass rounded-[20px] p-4 ${tones[tone]}`}>
-      <p className={`relative z-[1] text-sm font-medium ${accents[tone]}`}>{title}</p>
-      <p className="relative z-[1] mt-2 font-display text-2xl font-semibold text-[var(--t-hi)]">
+    <div className="glass rounded-[18px] p-4">
+      <p className={`text-sm font-medium ${accent}`}>{title}</p>
+      <p className="font-display mt-1 text-xl font-semibold text-[var(--t-hi)]">
         {formatNumber(count)}
       </p>
-      <p className="relative z-[1] mt-1 text-xs text-[var(--t-low)]">Count</p>
-      <div className="relative z-[1] mt-3 border-t border-white/10 pt-3">
-        <p className="font-mono text-base font-medium text-[var(--t-hi)]">{formatINR(volume)}</p>
-        <p className="text-xs text-[var(--t-low)]">Order Volume</p>
-      </div>
+      <p className="mt-2 font-mono text-sm text-[var(--t-mid)]">{formatINR(volume)}</p>
     </div>
   );
 }
 
 export default function DashboardPage() {
+  const user = useAppStore((s) => s.user);
+  const walletBalance = useAppStore((s) => s.walletBalance);
   const [range, setRange] = useState<DateRange>(defaultRange("today"));
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [chartDays, setChartDays] = useState<1 | 7 | 30>(7);
@@ -101,19 +112,14 @@ export default function DashboardPage() {
 
   const columns = useMemo<ColumnDef<Transaction>[]>(
     () => [
-      { accessorKey: "transactionId", header: "Transaction ID" },
-      { accessorKey: "customerName", header: "Customer" },
-      {
-        accessorKey: "type",
-        header: "Type",
-        cell: ({ row }) => (
-          <span className="capitalize">{row.original.type.replace("_", " ")}</span>
-        ),
-      },
+      { accessorKey: "transactionId", header: "Txn ID" },
+      { accessorKey: "customerName", header: "Details" },
       {
         accessorKey: "amount",
         header: "Amount",
-        cell: ({ row }) => formatINR(row.original.amount),
+        cell: ({ row }) => (
+          <span className="font-mono font-medium">{formatINR(row.original.amount)}</span>
+        ),
       },
       {
         accessorKey: "status",
@@ -122,12 +128,13 @@ export default function DashboardPage() {
       },
       {
         accessorKey: "createdAt",
-        header: "Date",
-        cell: ({ row }) => format(new Date(row.original.createdAt), "dd MMM yyyy, HH:mm"),
+        header: "When",
+        cell: ({ row }) =>
+          format(new Date(row.original.createdAt), "dd MMM, HH:mm"),
       },
       {
         id: "action",
-        header: "Action",
+        header: "",
         cell: () => (
           <Button size="sm" variant="ghost" aria-label="View">
             <Eye className="h-4 w-4" />
@@ -140,60 +147,114 @@ export default function DashboardPage() {
 
   return (
     <PageContainer>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm text-[var(--t-mid)]">Overview of pay-ins and pay-outs</p>
+      <div className="wallet-banner animate-rise mb-5 p-5 sm:p-6">
+        <div className="relative z-[1] flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-white/80">
+              Namaste{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+            </p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-white/70">
+              Available balance
+            </p>
+            <p className="font-display mt-1 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              {formatINR(walletBalance)}
+            </p>
+            <p className="mt-2 text-sm text-white/75">
+              Agent ID · {user?.agentId || "—"}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/wallet">
+              <Button className="!bg-white !text-[var(--brand-deep)] hover:!bg-white/90">
+                <ArrowDownLeft className="h-4 w-4" />
+                Add money
+              </Button>
+            </Link>
+            <Link href="/wallet">
+              <Button
+                variant="secondary"
+                className="!border-white/30 !bg-white/15 !text-white hover:!bg-white/25"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+                Withdraw
+              </Button>
+            </Link>
+          </div>
         </div>
+      </div>
+
+      <section className="animate-rise animate-rise-delay-1 mb-6">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+          {quickActions.map((a) => {
+            const Icon = a.icon;
+            return (
+              <Link key={a.label} href={a.href} className="quick-action">
+                <span className={`quick-action-icon ${a.tone}`}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="text-[11px] font-semibold text-[var(--t-mid)] sm:text-xs">
+                  {a.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="font-display text-base font-semibold text-[var(--t-hi)]">
+          Today&apos;s overview
+        </h2>
         <DatePicker value={range} onChange={setRange} />
       </div>
 
       <section className="mb-6">
         <div className="mb-3 flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-[var(--green)]" />
-          <h2 className="font-display text-base font-semibold text-[var(--t-hi)]">PayIns</h2>
+          <ArrowDownLeft className="h-4 w-4 text-[var(--green)]" />
+          <h3 className="text-sm font-semibold text-[var(--t-hi)]">Money in</h3>
         </div>
         {loading || !stats ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="glass h-36 animate-pulse rounded-[20px]" />
+              <div key={i} className="glass h-28 animate-pulse rounded-[18px]" />
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <StatCard title="Total" count={stats.payIns.total.count} volume={stats.payIns.total.volume} tone="primary" />
-            <StatCard title="Success" count={stats.payIns.success.count} volume={stats.payIns.success.volume} tone="success" />
-            <StatCard title="Failed" count={stats.payIns.failed.count} volume={stats.payIns.failed.volume} tone="danger" />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatMini title="Total" count={stats.payIns.total.count} volume={stats.payIns.total.volume} />
+            <StatMini title="Success" count={stats.payIns.success.count} volume={stats.payIns.success.volume} tone="success" />
+            <StatMini title="Failed" count={stats.payIns.failed.count} volume={stats.payIns.failed.volume} tone="danger" />
           </div>
         )}
       </section>
 
       <section className="mb-6">
         <div className="mb-3 flex items-center gap-2">
-          <TrendingDown className="h-4 w-4 text-[var(--yellow)]" />
-          <h2 className="font-display text-base font-semibold text-[var(--t-hi)]">Pay Outs</h2>
+          <ArrowUpRight className="h-4 w-4 text-[var(--yellow)]" />
+          <h3 className="text-sm font-semibold text-[var(--t-hi)]">Money out</h3>
         </div>
         {loading || !stats ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="glass h-36 animate-pulse rounded-[20px]" />
+              <div key={i} className="glass h-28 animate-pulse rounded-[18px]" />
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <StatCard title="Total" count={stats.payOuts.total.count} volume={stats.payOuts.total.volume} />
-            <StatCard title="Processed" count={stats.payOuts.processed.count} volume={stats.payOuts.processed.volume} tone="success" />
-            <StatCard title="Failed" count={stats.payOuts.failed.count} volume={stats.payOuts.failed.volume} tone="danger" />
-            <StatCard title="Pending" count={stats.payOuts.pending.count} volume={stats.payOuts.pending.volume} tone="warning" />
-            <StatCard title="Refund" count={stats.payOuts.refund.count} volume={stats.payOuts.refund.volume} tone="primary" />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <StatMini title="Total" count={stats.payOuts.total.count} volume={stats.payOuts.total.volume} />
+            <StatMini title="Processed" count={stats.payOuts.processed.count} volume={stats.payOuts.processed.volume} tone="success" />
+            <StatMini title="Failed" count={stats.payOuts.failed.count} volume={stats.payOuts.failed.volume} tone="danger" />
+            <StatMini title="Pending" count={stats.payOuts.pending.count} volume={stats.payOuts.pending.volume} tone="warning" />
+            <StatMini title="Refund" count={stats.payOuts.refund.count} volume={stats.payOuts.refund.volume} />
           </div>
         )}
       </section>
 
       <Card
         className="mb-6"
-        title="Transaction Trends"
+        title="Trends"
         action={
-          <div className="flex gap-1 rounded-full border border-white/10 bg-white/[0.03] p-1">
+          <div className="flex gap-1 rounded-full border border-[var(--g-border)] bg-[var(--input-bg)] p-1">
             {([1, 7, 30] as const).map((d) => (
               <button
                 key={d}
@@ -201,11 +262,11 @@ export default function DashboardPage() {
                 onClick={() => setChartDays(d)}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                   chartDays === d
-                    ? "bg-white text-[#0a0b10]"
+                    ? "bg-[var(--brand)] text-white"
                     : "text-[var(--t-mid)] hover:text-[var(--t-hi)]"
                 }`}
               >
-                {d === 1 ? "Today" : `${d} days`}
+                {d === 1 ? "Today" : `${d}d`}
               </button>
             ))}
           </div>
@@ -214,29 +275,29 @@ export default function DashboardPage() {
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chart}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-              <XAxis dataKey="label" tick={{ fontSize: 12, fill: "rgba(255,255,255,0.45)" }} stroke="rgba(255,255,255,0.15)" />
-              <YAxis tick={{ fontSize: 12, fill: "rgba(255,255,255,0.45)" }} stroke="rgba(255,255,255,0.15)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--g-border)" />
+              <XAxis dataKey="label" tick={{ fontSize: 12, fill: "var(--t-low)" }} stroke="var(--g-border)" />
+              <YAxis tick={{ fontSize: 12, fill: "var(--t-low)" }} stroke="var(--g-border)" />
               <Tooltip
                 contentStyle={{
-                  background: "rgba(12,13,24,0.95)",
-                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "var(--surface)",
+                  border: "1px solid var(--g-border)",
                   borderRadius: 12,
-                  color: "#fff",
+                  color: "var(--t-hi)",
                 }}
               />
               <Legend />
-              <Line type="monotone" dataKey="payIn" name="PayIn volume" stroke="#93C5FD" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="payOut" name="PayOut volume" stroke="#FCD34D" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="success" name="Successful" stroke="#34D399" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="failed" name="Failed" stroke="#F87171" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="payIn" name="In" stroke="#00A1E0" strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="payOut" name="Out" stroke="#F4A100" strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="success" name="Success" stroke="#0F9D58" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="failed" name="Failed" stroke="#E53935" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
-      <Card title="Recent Transactions">
-        <DataTable columns={columns} data={recent} loading={loading} />
+      <Card title="Recent activity">
+        <DataTable columns={columns} data={recent} loading={loading} emptyTitle="No transactions yet" />
       </Card>
     </PageContainer>
   );

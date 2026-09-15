@@ -1,17 +1,5 @@
 import { isWithinInterval, startOfDay, endOfDay, subDays } from "date-fns";
-import {
-  AGENT_ACCOUNTS,
-  CURRENT_USER,
-  MOCK_BANK_ACCOUNTS,
-  MOCK_CREDENTIALS,
-  MOCK_TRANSACTIONS,
-  MOCK_WALLET_BALANCE,
-  findAgentAccount,
-  getChartData,
-  mutateBalance,
-  mutateBanks,
-  mutateTransactions,
-} from "@/lib/mock-data";
+import { getChartData } from "@/lib/mock-data";
 import type {
   AgentUser,
   BankAccount,
@@ -22,145 +10,155 @@ import type {
   TransactionStatus,
   TransactionType,
 } from "@/lib/types";
-import { delay } from "@/lib/utils";
 import {
   firebaseLoginWithAgent,
   firebaseLoginWithGoogle,
   firebaseLogout,
   isFirebaseConfigured,
 } from "@/lib/firebase";
-import { paymentService } from "@/lib/services/paymentService";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const BANKS_KEY = "payflow-agent-banks";
 
-/** Swap implementations to hit real APIs when NEXT_PUBLIC_API_URL is set */
-async function apiFetch<T>(_path: string, _init?: RequestInit): Promise<T | null> {
-  if (!API_BASE) return null;
-  return null;
+async function payflowApi<T>(
+  path: string,
+  init?: RequestInit & { idToken?: string }
+): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+  if (init?.idToken) headers.Authorization = `Bearer ${init.idToken}`;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
+  }
+  return data as T;
 }
 
-function userFromFirebase(
-  agentId: string,
-  displayName: string | null,
-  email: string | null,
-  uid: string
-): AgentUser {
-  const name = displayName || agentId.toUpperCase();
-  const initials = name
-    .split(/\s+/)
-    .map((p) => p[0] || "")
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function userFromAgentPayload(agent: {
+  uid?: string;
+  id?: string;
+  agentId: string;
+  name: string;
+  email?: string;
+  mobile?: string;
+  avatarInitials?: string;
+}): AgentUser {
+  const name = agent.name || agent.agentId;
   return {
-    id: uid,
+    id: agent.uid || agent.id || agent.agentId,
     name,
-    agentId: agentId.toUpperCase(),
-    mobile: "",
-    email: email || `${agentId.toLowerCase()}@payflow.agent`,
-    avatarInitials: initials || "PF",
+    agentId: agent.agentId.toUpperCase(),
+    mobile: agent.mobile || "",
+    email: agent.email || `${agent.agentId.toLowerCase()}@payflow.agent`,
+    avatarInitials:
+      agent.avatarInitials ||
+      name
+        .split(/\s+/)
+        .map((p) => p[0] || "")
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() ||
+      "PF",
   };
+}
+
+function readBanks(): BankAccount[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(BANKS_KEY);
+    return raw ? (JSON.parse(raw) as BankAccount[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeBanks(banks: BankAccount[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(BANKS_KEY, JSON.stringify(banks));
 }
 
 export const authService = {
   async login(
     agentId: string,
     passcode: string
-  ): Promise<{ token: string; user: AgentUser; idToken?: string }> {
-    await delay(400);
-
-    // 1) Firebase Email/Password (prod) — auto-provisions agent on first login
+  ): Promise<{ token: string; user: AgentUser; idToken?: string; balance?: number }> {
+    let idToken: string | undefined;
     if (isFirebaseConfigured()) {
       try {
-        const { user: fbUser, idToken } = await firebaseLoginWithAgent(agentId, passcode);
-        const user = userFromFirebase(
-          agentId,
-          fbUser.displayName,
-          fbUser.email,
-          fbUser.uid
-        );
-        await paymentService.syncSession({
-          agentId: user.agentId,
-          name: user.name,
-          email: user.email,
-          mobile: user.mobile,
-          idToken,
-        });
-        return { token: idToken, user, idToken };
-      } catch (err: unknown) {
-        const code = (err as { code?: string })?.code || "";
-        const message = (err as { message?: string })?.message || "Login failed";
-
-        // Domain / provider misconfig → continue to seeded agent fallback
-        const softFail =
-          code === "auth/unauthorized-domain" ||
-          code === "auth/configuration-not-found" ||
-          code === "auth/operation-not-allowed" ||
-          code === "auth/api-key-not-valid" ||
-          code === "auth/network-request-failed";
-
-        if (!softFail) {
-          // Wrong password / user issues — still allow seeded agents as fallback
-          const mockUser = findAgentAccount(agentId, passcode);
-          if (!mockUser) {
-            throw new Error(message || "Invalid Agent ID or Passcode");
-          }
-        }
-        // softFail or known mock user: fall through
-      }
-    }
-
-    // 2) Seeded mock agents (local / fallback)
-    const user = findAgentAccount(agentId, passcode);
-    if (user) {
-      await paymentService.syncSession({
-        agentId: user.agentId,
-        name: user.name,
-        email: user.email,
-        mobile: user.mobile,
-        passcode,
-      } as Parameters<typeof paymentService.syncSession>[0] & { passcode?: string });
-      // Also sync with passcode via dedicated body for PHP
-      try {
-        const base = process.env.NEXT_PUBLIC_API_URL || "";
-        await fetch(`${base}/api/payflow/login.php`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({
-            agentId: user.agentId,
-            passcode,
-            name: user.name,
-            email: user.email,
-            mobile: user.mobile,
-          }),
-        });
+        const fb = await firebaseLoginWithAgent(agentId, passcode);
+        idToken = fb.idToken;
       } catch {
-        /* PHP may be unavailable in local static mode */
+        /* Server passcode auth is source of truth for admin-created agents */
       }
-      return { token: `mock-jwt-${user.agentId}`, user };
     }
 
-    throw new Error("Invalid Agent ID or Passcode");
+    const res = await payflowApi<{
+      success: boolean;
+      agent: Parameters<typeof userFromAgentPayload>[0];
+      balance: number;
+      token?: string;
+    }>("/api/payflow/login.php", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: agentId.trim().toUpperCase(),
+        passcode,
+        mobile: agentId.trim(),
+      }),
+      idToken,
+    });
+
+    const user = userFromAgentPayload(res.agent);
+    return {
+      token: idToken || res.token || `session-${user.agentId}`,
+      user,
+      idToken,
+      balance: res.balance,
+    };
   },
 
-  async loginWithGoogle(): Promise<{ token: string; user: AgentUser; idToken?: string }> {
+  async loginWithGoogle(): Promise<{
+    token: string;
+    user: AgentUser;
+    idToken?: string;
+    balance?: number;
+  }> {
     if (!isFirebaseConfigured()) {
       throw new Error("Firebase is not configured");
     }
-    const { user: fbUser, idToken } = await firebaseLoginWithGoogle();
-    const agentId = (fbUser.email || "GOOGLE").split("@")[0].toUpperCase();
-    const user = userFromFirebase(agentId, fbUser.displayName, fbUser.email, fbUser.uid);
-    await paymentService.syncSession({
-      agentId: user.agentId,
-      name: user.name,
-      email: user.email,
+    const { idToken, user: fbUser } = await firebaseLoginWithGoogle();
+    const res = await payflowApi<{
+      success: boolean;
+      agent: Parameters<typeof userFromAgentPayload>[0];
+      balance: number;
+    }>("/api/payflow/login.php", {
+      method: "POST",
+      body: JSON.stringify({
+        email: fbUser.email,
+        name: fbUser.displayName,
+      }),
       idToken,
     });
-    return { token: idToken, user, idToken };
+    const user = userFromAgentPayload(res.agent);
+    return { token: idToken, user, idToken, balance: res.balance };
   },
 
   async logout() {
+    try {
+      await payflowApi("/api/payflow/me.php", {
+        method: "POST",
+        body: JSON.stringify({ action: "logout" }),
+      });
+    } catch {
+      /* ignore */
+    }
     try {
       await firebaseLogout();
     } catch {
@@ -168,17 +166,29 @@ export const authService = {
     }
   },
 
-  async changePasscode(current: string, next: string, agentId?: string) {
-    await delay(800);
-    const account = AGENT_ACCOUNTS.find(
-      (a) => a.agentId === (agentId || MOCK_CREDENTIALS.agentId)
-    );
-    if (!account || account.passcode !== current) {
-      throw new Error("Current passcode is incorrect");
-    }
-    if (next.length < 6) throw new Error("New passcode must be at least 6 digits");
-    account.passcode = next;
+  async changePasscode(current: string, next: string) {
+    if (next.length < 6) throw new Error("New passcode must be at least 6 characters");
+    await payflowApi("/api/payflow/me.php", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "change_passcode",
+        currentPasscode: current,
+        newPasscode: next,
+      }),
+    });
     return { success: true };
+  },
+
+  async session(): Promise<{ user: AgentUser; balance: number } | null> {
+    try {
+      const res = await payflowApi<{
+        agent: Parameters<typeof userFromAgentPayload>[0];
+        balance: number;
+      }>("/api/payflow/me.php");
+      return { user: userFromAgentPayload(res.agent), balance: res.balance };
+    } catch {
+      return null;
+    }
   },
 };
 
@@ -191,6 +201,39 @@ function inRange(dateStr: string, range?: DateRange) {
   });
 }
 
+function ledgerToTransaction(e: {
+  id: string;
+  type?: string;
+  amount: number;
+  balance?: number;
+  createdAt: string;
+  note?: string;
+  utr?: string;
+}): Transaction {
+  const amt = Number(e.amount) || 0;
+  let type: TransactionType = "wallet_add";
+  if (e.type === "admin_debit" || e.type === "wallet_withdraw" || e.type === "bill" || amt < 0) {
+    type = e.type === "bill" ? "bill" : "wallet_withdraw";
+  } else if (e.type === "qr") {
+    type = "qr";
+  } else if (e.type === "wallet_add" || e.type === "admin_credit") {
+    type = "wallet_add";
+  }
+  return {
+    id: e.id,
+    transactionId: e.id,
+    customerName: e.note || (e.type || "Wallet").replace(/_/g, " "),
+    mobile: "",
+    type,
+    amount: Math.abs(amt),
+    status: "success",
+    utr: e.utr,
+    createdAt: e.createdAt,
+    closingBalance: e.balance,
+    reference: e.type,
+  };
+}
+
 export const transactionService = {
   async list(filters?: {
     search?: string;
@@ -201,15 +244,25 @@ export const transactionService = {
     page?: number;
     pageSize?: number;
   }) {
-    await delay(500);
-    let data = [...MOCK_TRANSACTIONS];
+    const res = await payflowApi<{
+      entries: Array<{
+        id: string;
+        type?: string;
+        amount: number;
+        balance?: number;
+        createdAt: string;
+        note?: string;
+        utr?: string;
+      }>;
+    }>("/api/payflow/wallet/balance.php?limit=500");
+    let data = (res.entries || []).map(ledgerToTransaction);
+
     if (filters?.search) {
       const q = filters.search.toLowerCase();
       data = data.filter(
         (t) =>
           t.transactionId.toLowerCase().includes(q) ||
           t.customerName.toLowerCase().includes(q) ||
-          t.mobile.includes(q) ||
           (t.utr?.toLowerCase().includes(q) ?? false)
       );
     }
@@ -236,33 +289,16 @@ export const transactionService = {
   },
 
   async dashboardStats(range: DateRange): Promise<DashboardStats> {
-    await delay(600);
-    const tx = MOCK_TRANSACTIONS.filter((t) => inRange(t.createdAt, range));
-    const payIns = tx.filter((t) => t.type === "payin");
+    const { all: tx } = await this.list({ range, page: 1, pageSize: 1000 });
+    const payIns = tx.filter(
+      (t) => t.type === "payin" || t.type === "wallet_add" || t.type === "qr"
+    );
     const payOuts = tx.filter(
       (t) => t.type === "payout" || t.type === "wallet_withdraw" || t.type === "bill"
     );
     const sum = (arr: Transaction[]) => arr.reduce((s, t) => s + t.amount, 0);
     const byStatus = (arr: Transaction[], status: TransactionStatus) =>
       arr.filter((t) => t.status === status);
-
-    // Sensible defaults when sparse for selected day
-    if (tx.length < 5 && range.preset === "today") {
-      return {
-        payIns: {
-          total: { count: 1248, volume: 1842500 },
-          success: { count: 1196, volume: 1758200 },
-          failed: { count: 52, volume: 84300 },
-        },
-        payOuts: {
-          total: { count: 842, volume: 1250000 },
-          processed: { count: 780, volume: 1165000 },
-          failed: { count: 28, volume: 42000 },
-          pending: { count: 24, volume: 31000 },
-          refund: { count: 10, volume: 12000 },
-        },
-      };
-    }
 
     return {
       payIns: {
@@ -287,9 +323,8 @@ export const transactionService = {
           volume: sum(byStatus(payOuts, "failed")),
         },
         pending: {
-          count: byStatus(payOuts, "pending").length + byStatus(payOuts, "processing").length,
-          volume:
-            sum(byStatus(payOuts, "pending")) + sum(byStatus(payOuts, "processing")),
+          count: byStatus(payOuts, "pending").length,
+          volume: sum(byStatus(payOuts, "pending")),
         },
         refund: {
           count: byStatus(payOuts, "refund").length,
@@ -299,51 +334,28 @@ export const transactionService = {
     };
   },
 
-  async chart(days: number) {
-    await delay(400);
-    return getChartData(days);
+  async chart(days: 1 | 7 | 30) {
+    const range: DateRange = {
+      from: subDays(new Date(), days - 1),
+      to: new Date(),
+    };
+    const { all } = await this.list({ range, pageSize: 1000 });
+    return getChartData(days, all);
   },
 };
 
 export const walletService = {
   async getBalance() {
-    await delay(300);
-    return MOCK_WALLET_BALANCE;
+    const res = await payflowApi<{ balance: number }>("/api/payflow/wallet/balance.php");
+    return res.balance;
   },
   async getBanks() {
-    await delay(300);
-    return [...MOCK_BANK_ACCOUNTS];
+    return readBanks();
   },
-  async addFunds(payload: {
-    customerName: string;
-    mobile: string;
-    paymentCategory: string;
-    cardType: string;
-    amount: number;
-  }) {
-    await delay(1200);
-    if (payload.amount < 100) throw new Error("Minimum amount is ₹100");
-    const next = MOCK_WALLET_BALANCE + payload.amount;
-    mutateBalance(next);
-    const tx: Transaction = {
-      id: `tx-af-${Date.now()}`,
-      transactionId: `TXN${Date.now().toString().slice(-8)}`,
-      customerName: payload.customerName,
-      mobile: payload.mobile,
-      type: "wallet_add",
-      category: payload.paymentCategory,
-      amount: payload.amount,
-      status: "success",
-      createdAt: new Date().toISOString(),
-      openingBalance: MOCK_WALLET_BALANCE - payload.amount,
-      closingBalance: next,
-      reference: `AF${Date.now()}`,
-    };
-    mutateTransactions([tx, ...MOCK_TRANSACTIONS]);
-    return { balance: next, transaction: tx };
+  async addFunds() {
+    throw new Error("Use Add Funds checkout — wallet top-ups go through Razorpay/Cashfree.");
   },
   async verifyBank(payload: Omit<BankAccount, "id" | "verified">) {
-    await delay(1400);
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(payload.ifsc)) {
       throw new Error("Invalid IFSC code");
     }
@@ -355,40 +367,41 @@ export const walletService = {
       id: `ba-${Date.now()}`,
       verified: true,
     };
-    mutateBanks([account, ...MOCK_BANK_ACCOUNTS]);
+    writeBanks([account, ...readBanks()]);
     return account;
   },
   async deleteBank(id: string) {
-    await delay(500);
-    mutateBanks(MOCK_BANK_ACCOUNTS.filter((b) => b.id !== id));
+    writeBanks(readBanks().filter((b) => b.id !== id));
     return true;
   },
   async withdraw(bankId: string, amount: number) {
-    await delay(1200);
-    const bank = MOCK_BANK_ACCOUNTS.find((b) => b.id === bankId);
+    const bank = readBanks().find((b) => b.id === bankId);
     if (!bank) throw new Error("Bank account not found");
     if (!bank.verified) throw new Error("Bank account is not verified");
-    if (amount > MOCK_WALLET_BALANCE) throw new Error("Insufficient wallet balance");
     if (amount < 100) throw new Error("Minimum withdrawal is ₹100");
-    const next = MOCK_WALLET_BALANCE - amount;
-    mutateBalance(next);
-    const tx: Transaction = {
-      id: `tx-wd-${Date.now()}`,
-      transactionId: `TXN${Date.now().toString().slice(-8)}`,
-      customerName: bank.holderName,
-      mobile: CURRENT_USER.mobile,
-      type: "wallet_withdraw",
-      amount,
-      status: "processing",
-      utr: `UTR${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      bankAccount: `XXXX${bank.accountNumber.slice(-4)}`,
-      openingBalance: next + amount,
-      closingBalance: next,
-      reference: `WD${Date.now()}`,
+    const res = await payflowApi<{ balance: number }>("/api/payflow/wallet/debit.php", {
+      method: "POST",
+      body: JSON.stringify({
+        amount,
+        type: "wallet_withdraw",
+        note: `Withdraw to ${bank.bankName} XXXX${bank.accountNumber.slice(-4)}`,
+      }),
+    });
+    return {
+      balance: res.balance,
+      transaction: {
+        id: `tx-wd-${Date.now()}`,
+        transactionId: `TXN${Date.now().toString().slice(-8)}`,
+        customerName: bank.holderName,
+        mobile: "",
+        type: "wallet_withdraw" as const,
+        amount,
+        status: "processing" as const,
+        createdAt: new Date().toISOString(),
+        bankAccount: `XXXX${bank.accountNumber.slice(-4)}`,
+        closingBalance: res.balance,
+      },
     };
-    mutateTransactions([tx, ...MOCK_TRANSACTIONS]);
-    return { balance: next, transaction: tx };
   },
 };
 
@@ -400,45 +413,52 @@ export const billPaymentService = {
     mobile: string;
     paymentAmount?: number;
   }): Promise<BillDetails> {
-    await delay(1100);
     if (!payload.consumerNumber || payload.consumerNumber.length < 5) {
       throw new Error("Invalid consumer number");
     }
-    const billAmount = payload.paymentAmount || Math.round((800 + Math.random() * 2200) * 100) / 100;
-    const lateFee = Math.random() > 0.7 ? 50 : 0;
+    const billAmount =
+      payload.paymentAmount && payload.paymentAmount > 0
+        ? payload.paymentAmount
+        : 0;
+    if (billAmount <= 0) {
+      throw new Error("Enter a valid bill amount to pay");
+    }
     return {
       customerName: payload.customerName,
-      billNumber: `BN${Math.floor(Math.random() * 1e8)}`,
+      billNumber: `BN${Date.now().toString().slice(-8)}`,
       dueDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
       billAmount,
-      lateFee,
-      totalPayable: billAmount + lateFee,
+      lateFee: 0,
+      totalPayable: billAmount,
       consumerNumber: payload.consumerNumber,
       category: payload.category,
     };
   },
   async payBill(bill: BillDetails, method: "wallet" | "other") {
-    await delay(1200);
-    if (method === "wallet" && bill.totalPayable > MOCK_WALLET_BALANCE) {
-      throw new Error("Insufficient wallet balance");
+    if (method !== "wallet") {
+      throw new Error("Only wallet payments are supported right now");
     }
-    if (method === "wallet") {
-      mutateBalance(MOCK_WALLET_BALANCE - bill.totalPayable);
-    }
-    const tx: Transaction = {
+    const res = await payflowApi<{ balance: number }>("/api/payflow/wallet/debit.php", {
+      method: "POST",
+      body: JSON.stringify({
+        amount: bill.totalPayable,
+        type: "bill",
+        note: `${bill.category} · ${bill.billNumber}`,
+      }),
+    });
+    return {
       id: `tx-bill-${Date.now()}`,
       transactionId: `TXN${Date.now().toString().slice(-8)}`,
       customerName: bill.customerName,
-      mobile: CURRENT_USER.mobile,
-      type: "bill",
+      mobile: "",
+      type: "bill" as const,
       category: bill.category,
       amount: bill.totalPayable,
-      status: "success",
+      status: "success" as const,
       createdAt: new Date().toISOString(),
       reference: bill.billNumber,
-    };
-    mutateTransactions([tx, ...MOCK_TRANSACTIONS]);
-    return tx;
+      closingBalance: res.balance,
+    } satisfies Transaction;
   },
 };
 
@@ -451,10 +471,9 @@ export const qrService = {
     utr: string;
     receiptName: string;
   }) {
-    await delay(1000);
-    if (MOCK_TRANSACTIONS.some((t) => t.utr === payload.utr)) {
-      throw new Error("Duplicate UTR");
-    }
+    if (!payload.utr.trim()) throw new Error("UTR is required");
+    if (payload.amount <= 0) throw new Error("Amount must be greater than zero");
+    // Record as pending QR collection note in agent ledger (no auto-credit)
     const tx: Transaction = {
       id: `tx-qr-${Date.now()}`,
       transactionId: `TXN${Date.now().toString().slice(-8)}`,
@@ -468,12 +487,22 @@ export const qrService = {
       receiptName: payload.receiptName,
       createdAt: new Date().toISOString(),
     };
-    mutateTransactions([tx, ...MOCK_TRANSACTIONS]);
+    const key = "payflow-qr-pending";
+    const prev = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+    const list: Transaction[] = prev ? JSON.parse(prev) : [];
+    if (list.some((t) => t.utr === payload.utr)) {
+      throw new Error("Duplicate UTR");
+    }
+    list.unshift(tx);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, JSON.stringify(list.slice(0, 200)));
+    }
     return tx;
   },
   async history(filters?: { search?: string; from?: string; to?: string }) {
-    await delay(400);
-    let data = MOCK_TRANSACTIONS.filter((t) => t.type === "qr");
+    const key = "payflow-qr-pending";
+    const raw = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+    let data: Transaction[] = raw ? JSON.parse(raw) : [];
     if (filters?.search) {
       const q = filters.search.toLowerCase();
       data = data.filter(
@@ -484,12 +513,8 @@ export const qrService = {
           (t.utr?.toLowerCase().includes(q) ?? false)
       );
     }
-    if (filters?.from) {
-      data = data.filter((t) => t.createdAt >= filters.from!);
-    }
-    if (filters?.to) {
-      data = data.filter((t) => t.createdAt.slice(0, 10) <= filters.to!);
-    }
+    if (filters?.from) data = data.filter((t) => t.createdAt >= filters.from!);
+    if (filters?.to) data = data.filter((t) => t.createdAt.slice(0, 10) <= filters.to!);
     return data;
   },
 };
