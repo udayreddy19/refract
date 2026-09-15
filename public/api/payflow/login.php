@@ -42,56 +42,61 @@ function payflow_login_success(array $agent, string $auth): void
     ]);
 }
 
+// Optional Firebase path — only succeed if retailer exists in registry.
+// If Firebase is valid but no retailer row, fall through to Agent ID + passcode.
 if ($idToken !== '') {
     $fb = payflow_verify_firebase_id_token($idToken);
-    if (!$fb) {
-        json_response(['error' => 'Invalid Firebase session. Sign in again.'], 401);
-    }
-    $email = (string) ($fb['email'] ?? $email);
-    $name = (string) ($fb['displayName'] ?? $name);
-    if ($agentId === '' && $email !== '') {
-        $agentId = strtoupper(explode('@', $email)[0] ?: '');
-    }
+    if ($fb) {
+        $email = (string) ($fb['email'] ?? $email);
+        $name = (string) ($fb['displayName'] ?? $name);
+        if ($agentId === '' && $email !== '') {
+            $agentId = strtoupper(explode('@', $email)[0] ?: '');
+        }
 
-    $registered = payflow_find_agent($agentId !== '' ? $agentId : null, null, $mobile !== '' ? $mobile : null);
-    if (!$registered && $email !== '') {
-        foreach (payflow_agents_all() as $row) {
-            if (strcasecmp((string) ($row['email'] ?? ''), $email) === 0) {
-                $registered = $row;
-                break;
+        $registered = payflow_find_agent($agentId !== '' ? $agentId : null, null, null);
+        if (!$registered && $email !== '') {
+            foreach (payflow_agents_all() as $row) {
+                if (strcasecmp((string) ($row['email'] ?? ''), $email) === 0) {
+                    $registered = $row;
+                    break;
+                }
             }
         }
+        if ($registered) {
+            $block = payflow_agent_can_transact($registered);
+            if ($block) {
+                json_response(['error' => $block], 403);
+            }
+            $registered['email'] = $email !== '' ? $email : (string) ($registered['email'] ?? '');
+            $registered['name'] = $name !== '' ? $name : (string) ($registered['name'] ?? $registered['agentId']);
+            $registered['firebaseUid'] = $fb['localId'] ?? null;
+            payflow_login_success($registered, 'firebase');
+        }
     }
-    if (!$registered) {
-        json_response(['error' => 'No retailer account found for this login. Ask admin to create your Agent ID.'], 403);
-    }
-    if (($registered['status'] ?? 'active') === 'disabled') {
-        json_response(['error' => 'This retailer account is disabled. Contact support.'], 403);
-    }
-
-    $registered['email'] = $email !== '' ? $email : (string) ($registered['email'] ?? '');
-    $registered['name'] = $name !== '' ? $name : (string) ($registered['name'] ?? $registered['agentId']);
-    $registered['firebaseUid'] = $fb['localId'] ?? null;
-    payflow_login_success($registered, 'firebase');
 }
 
-if ($agentId === '' && $mobile === '') {
-    json_response(['error' => 'Agent ID or mobile is required'], 400);
+if ($agentId === '') {
+    json_response(['error' => 'Agent ID is required'], 400);
 }
 if ($passcode === '') {
     json_response(['error' => 'Passcode is required'], 400);
 }
 
-$agent = payflow_find_agent($agentId !== '' ? $agentId : null, null, $mobile !== '' ? $mobile : null);
+// Look up by Agent ID only (do not treat Agent ID as mobile).
+$agent = payflow_find_agent($agentId, null, null);
 if (!$agent) {
-    json_response(['error' => 'Invalid Agent ID or Passcode'], 401);
+    json_response([
+        'error' => 'Invalid Agent ID or Passcode. Ask admin to create your retailer account (or run Import JSON → MySQL).',
+    ], 401);
 }
-if (($agent['status'] ?? 'active') === 'disabled') {
-    json_response(['error' => 'This retailer account is disabled. Contact support.'], 403);
+
+$block = payflow_agent_can_transact($agent);
+if ($block) {
+    json_response(['error' => $block], 403);
 }
 
 $stored = (string) ($agent['passcode'] ?? '');
-if (!payflow_verify_passcode($passcode, $stored)) {
+if ($stored === '' || !payflow_verify_passcode($passcode, $stored)) {
     json_response(['error' => 'Invalid Agent ID or Passcode'], 401);
 }
 
@@ -104,9 +109,6 @@ if ($email !== '') {
 }
 if ($name !== '') {
     $agent['name'] = $name;
-}
-if ($mobile !== '') {
-    $agent['mobile'] = preg_replace('/\D+/', '', $mobile);
 }
 
 payflow_login_success($agent, 'local');

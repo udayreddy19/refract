@@ -245,18 +245,85 @@ function payflow_default_agents(): array
 }
 
 /** @return array<int, array<string, mixed>> */
+function payflow_agents_from_json(): array
+{
+    $agents = read_store('payflow_agents.json', []);
+    if (!is_array($agents)) {
+        return [];
+    }
+    return array_values($agents);
+}
+
+/**
+ * If MySQL is configured but empty, import JSON agents once so logins keep working.
+ */
+function payflow_mysql_bootstrap_from_json(): void
+{
+    static $tried = false;
+    if ($tried) {
+        return;
+    }
+    $tried = true;
+    $db = mysql_pdo();
+    if (!$db) {
+        return;
+    }
+    try {
+        $count = (int) $db->query('SELECT COUNT(*) FROM rx_agents')->fetchColumn();
+        if ($count > 0) {
+            return;
+        }
+    } catch (Throwable $e) {
+        return;
+    }
+    $jsonAgents = payflow_agents_from_json();
+    if (count($jsonAgents) === 0) {
+        return;
+    }
+    foreach ($jsonAgents as $agent) {
+        if (!is_array($agent) || empty($agent['uid']) || empty($agent['agentId'])) {
+            continue;
+        }
+        if (!isset($agent['kycStatus'])) {
+            $agent['kycStatus'] = 'pending';
+        }
+        payflow_agent_save($agent);
+    }
+    // Import wallets if present
+    $wallets = read_store('payflow_wallets.json', []);
+    if (is_array($wallets)) {
+        $stmt = $db->prepare(
+            'INSERT INTO rx_wallets (uid, balance, updated_at) VALUES (?,?,?)
+             ON DUPLICATE KEY UPDATE balance=VALUES(balance), updated_at=VALUES(updated_at)'
+        );
+        foreach ($wallets as $w) {
+            if (!is_array($w) || empty($w['uid'])) {
+                continue;
+            }
+            $stmt->execute([
+                $w['uid'],
+                (float) ($w['balance'] ?? 0),
+                (string) ($w['updatedAt'] ?? gmdate('c')),
+            ]);
+        }
+    }
+}
+
+/** @return array<int, array<string, mixed>> */
 function payflow_agents_all(): array
 {
     $db = mysql_pdo();
     if ($db) {
+        payflow_mysql_bootstrap_from_json();
         $rows = $db->query('SELECT * FROM rx_agents ORDER BY agent_id ASC')->fetchAll();
-        return array_map('payflow_agent_row_from_db', $rows ?: []);
+        $agents = array_map('payflow_agent_row_from_db', $rows ?: []);
+        if (count($agents) > 0) {
+            return $agents;
+        }
+        // MySQL empty / import failed — fall back to JSON so login still works
+        return payflow_agents_from_json();
     }
-    $agents = read_store('payflow_agents.json', []);
-    if (!is_array($agents)) {
-        $agents = [];
-    }
-    return array_values($agents);
+    return payflow_agents_from_json();
 }
 
 function payflow_agent_save(array $agent): void
@@ -571,17 +638,22 @@ function payflow_find_agent(?string $agentId = null, ?string $uid = null, ?strin
 {
     $db = mysql_pdo();
     if ($db) {
+        payflow_mysql_bootstrap_from_json();
         if ($uid !== null && $uid !== '') {
             $stmt = $db->prepare('SELECT * FROM rx_agents WHERE uid = ? LIMIT 1');
             $stmt->execute([trim($uid)]);
             $row = $stmt->fetch();
-            return $row ? payflow_agent_row_from_db($row) : null;
+            if ($row) {
+                return payflow_agent_row_from_db($row);
+            }
         }
         if ($agentId !== null && $agentId !== '') {
             $stmt = $db->prepare('SELECT * FROM rx_agents WHERE agent_id = ? LIMIT 1');
             $stmt->execute([strtoupper(trim($agentId))]);
             $row = $stmt->fetch();
-            return $row ? payflow_agent_row_from_db($row) : null;
+            if ($row) {
+                return payflow_agent_row_from_db($row);
+            }
         }
         if ($mobile !== null) {
             $digits = preg_replace('/\D+/', '', $mobile);
@@ -596,17 +668,17 @@ function payflow_find_agent(?string $agentId = null, ?string $uid = null, ?strin
                 }
             }
         }
-        return null;
+        // Fall through to JSON if MySQL miss (pre-migration retailers)
     }
 
-    $agentId = $agentId !== null ? strtoupper(trim($agentId)) : null;
-    $uid = $uid !== null ? trim($uid) : null;
+    $agentIdN = $agentId !== null ? strtoupper(trim($agentId)) : null;
+    $uidN = $uid !== null ? trim($uid) : null;
     $digits = $mobile !== null ? preg_replace('/\D+/', '', $mobile) : '';
-    foreach (payflow_agents_all() as $agent) {
-        if ($uid !== null && $uid !== '' && ($agent['uid'] ?? '') === $uid) {
+    foreach (payflow_agents_from_json() as $agent) {
+        if ($uidN !== null && $uidN !== '' && ($agent['uid'] ?? '') === $uidN) {
             return $agent;
         }
-        if ($agentId !== null && $agentId !== '' && strtoupper((string) ($agent['agentId'] ?? '')) === $agentId) {
+        if ($agentIdN !== null && $agentIdN !== '' && strtoupper((string) ($agent['agentId'] ?? '')) === $agentIdN) {
             return $agent;
         }
         if ($digits !== '' && strlen($digits) >= 10) {
@@ -614,6 +686,18 @@ function payflow_find_agent(?string $agentId = null, ?string $uid = null, ?strin
             if ($m !== '' && substr($m, -10) === substr($digits, -10)) {
                 return $agent;
             }
+        }
+    }
+    // Last resort: scan MySQL-backed list (already bootstrapped)
+    if (!$db) {
+        return null;
+    }
+    foreach (payflow_agents_all() as $agent) {
+        if ($uidN !== null && $uidN !== '' && ($agent['uid'] ?? '') === $uidN) {
+            return $agent;
+        }
+        if ($agentIdN !== null && $agentIdN !== '' && strtoupper((string) ($agent['agentId'] ?? '')) === $agentIdN) {
+            return $agent;
         }
     }
     return null;

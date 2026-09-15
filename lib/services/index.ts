@@ -11,7 +11,6 @@ import type {
   TransactionType,
 } from "@/lib/types";
 import {
-  firebaseLoginWithAgent,
   firebaseLoginWithGoogle,
   firebaseLogout,
   isFirebaseConfigured,
@@ -90,16 +89,9 @@ export const authService = {
     agentId: string,
     passcode: string
   ): Promise<{ token: string; user: AgentUser; idToken?: string; balance?: number }> {
-    let idToken: string | undefined;
-    if (isFirebaseConfigured()) {
-      try {
-        const fb = await firebaseLoginWithAgent(agentId, passcode);
-        idToken = fb.idToken;
-      } catch {
-        /* Server passcode auth is source of truth for admin-created agents */
-      }
-    }
-
+    // Admin-created retailers authenticate against the PHP registry (MySQL/JSON).
+    // Do not send a Firebase token here — a Firebase-only session with no retailer
+    // row used to block passcode login.
     const res = await payflowApi<{
       success: boolean;
       agent: Parameters<typeof userFromAgentPayload>[0];
@@ -110,16 +102,13 @@ export const authService = {
       body: JSON.stringify({
         agentId: agentId.trim().toUpperCase(),
         passcode,
-        mobile: agentId.trim(),
       }),
-      idToken,
     });
 
     const user = userFromAgentPayload(res.agent);
     return {
-      token: idToken || res.token || `session-${user.agentId}`,
+      token: res.token || `session-${user.agentId}`,
       user,
-      idToken,
       balance: res.balance,
     };
   },
