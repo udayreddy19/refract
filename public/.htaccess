@@ -11,6 +11,10 @@
   # Block direct access to CRM data directory
   RewriteRule ^data(/|$) - [F,L]
 
+  # Firebase Auth reserved URLs → proxy (branded Google "continue to reconcilex.in")
+  RewriteRule ^__/auth(?:/(.*))?$ api/firebase-auth-proxy.php?__fbpath=__/auth/$1 [L,QSA]
+  RewriteRule ^__/firebase/init\.json$ api/firebase-auth-proxy.php?__fbpath=__/firebase/init.json [L,QSA]
+
   # Prefer static HTML over same-named directories (Next export creates both)
   RewriteRule ^results/?$ results.html [L]
   RewriteRule ^pricing/?$ pricing.html [L]

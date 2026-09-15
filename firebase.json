@@ -8,9 +8,15 @@
         "supportEmail": "agent@reconcilex.in",
         "authorizedRedirectUris": [
           "https://reconcilex.in",
-          "https://www.reconcilex.in"
+          "https://www.reconcilex.in",
+          "https://reconcilex.in/__/auth/handler",
+          "https://www.reconcilex.in/__/auth/handler"
         ]
       }
     }
+  },
+  "hosting": {
+    "public": "hosting-auth",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
   }
 }
