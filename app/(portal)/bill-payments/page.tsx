@@ -43,6 +43,7 @@ import { Badge } from "@/components/ui/badge";
 import { BILL_CATEGORIES } from "@/lib/mock-data";
 import { billPaymentService, transactionService } from "@/lib/services";
 import type { BillCategory, BillDetails, Transaction } from "@/lib/types";
+import { ReceiptActions } from "@/components/receipt/ReceiptActions";
 import { formatINR, cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { type ColumnDef } from "@tanstack/react-table";
@@ -171,6 +172,21 @@ export default function BillPaymentsPage() {
       const tx = await billPaymentService.payBill(bill, method);
       if (method === "wallet") {
         setWalletBalance(walletBalance - bill.totalPayable);
+      }
+      if (selected) {
+        void fetch("/api/payflow/favorites.php", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            categoryId: selected.id,
+            categoryName: selected.name,
+            consumerNumber: bill.consumerNumber || bill.billNumber,
+            customerName: bill.customerName,
+            mobile: "",
+            lastAmount: bill.totalPayable,
+          }),
+        }).catch(() => undefined);
       }
       setConfirmOpen(false);
       setSuccessTx(tx);
@@ -355,19 +371,20 @@ export default function BillPaymentsPage() {
               <div className="flex justify-between"><dt className="text-muted">Category</dt><dd className="font-medium">{successTx.category}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">Date/time</dt><dd className="font-medium">{format(new Date(successTx.createdAt), "dd MMM yyyy, HH:mm")}</dd></div>
             </dl>
-            <div className="flex gap-3">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                onClick={() => toast.success("Receipt downloaded (demo)")}
-              >
-                <Download className="h-4 w-4" />
-                Download receipt
-              </Button>
-              <Button className="flex-1" onClick={closeFlow}>
-                Done
-              </Button>
-            </div>
+            <ReceiptActions
+              receipt={{
+                title: "Bill payment",
+                status: "success",
+                amount: successTx.amount,
+                transactionId: successTx.transactionId,
+                customer: successTx.customerName,
+                category: successTx.category,
+                at: format(new Date(successTx.createdAt), "dd MMM yyyy, HH:mm"),
+              }}
+            />
+            <Button className="w-full" onClick={closeFlow}>
+              Done
+            </Button>
           </div>
         )}
       </Modal>

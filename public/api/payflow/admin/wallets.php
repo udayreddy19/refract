@@ -34,13 +34,21 @@ if (!$agent) {
 
 $direction = strtolower(trim((string) ($body['direction'] ?? 'credit')));
 $amount = round((float) ($body['amount'] ?? 0), 2);
-$note = trim((string) ($body['note'] ?? 'Admin adjustment'));
+$note = trim((string) ($body['note'] ?? $body['reason'] ?? ''));
+$reason = trim((string) ($body['reason'] ?? $note));
+$receiptId = trim((string) ($body['receiptId'] ?? ''));
 
 if ($amount <= 0) {
     json_response(['error' => 'Amount must be greater than zero.'], 400);
 }
 if (!in_array($direction, ['credit', 'debit'], true)) {
     json_response(['error' => 'Direction must be credit or debit.'], 400);
+}
+if ($reason === '') {
+    json_response(['error' => 'Reason is required for wallet adjustments.'], 400);
+}
+if ($receiptId === '') {
+    json_response(['error' => 'Receipt ID is required for wallet adjustments.'], 400);
 }
 
 $delta = $direction === 'debit' ? -1 * $amount : $amount;
@@ -53,19 +61,25 @@ if ($direction === 'debit' && $amount > $current) {
 $balance = payflow_wallet_credit($targetUid, $delta, [
     'type' => $direction === 'debit' ? 'admin_debit' : 'admin_credit',
     'source' => 'admin',
-    'note' => $note,
+    'note' => $reason,
+    'reason' => $reason,
+    'receiptId' => $receiptId,
     'agentId' => $agent['agentId'] ?? '',
     'adminRole' => admin_role(),
 ]);
 
-append_audit('payflow_wallet_adjust', [
-    'uid' => $targetUid,
-    'agentId' => $agent['agentId'] ?? '',
-    'direction' => $direction,
-    'amount' => $amount,
-    'balance' => $balance,
-    'note' => $note,
-]);
+payflow_admin_audit(
+    'payflow_wallet_adjust',
+    [
+        'uid' => $targetUid,
+        'agentId' => $agent['agentId'] ?? '',
+        'direction' => $direction,
+        'amount' => $amount,
+        'balance' => $balance,
+    ],
+    $reason,
+    $receiptId
+);
 
 json_response([
     'success' => true,

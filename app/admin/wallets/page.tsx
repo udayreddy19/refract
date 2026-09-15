@@ -20,7 +20,8 @@ export default function AdminWalletsPage() {
   const [selected, setSelected] = useState<PayflowAgent | null>(null);
   const [direction, setDirection] = useState<"credit" | "debit">("credit");
   const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("Admin adjustment");
+  const [reason, setReason] = useState("");
+  const [receiptId, setReceiptId] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -74,7 +75,8 @@ export default function AdminWalletsPage() {
               setSelected(row.original);
               setAmount("");
               setDirection("credit");
-              setNote("Admin adjustment");
+              setReason("");
+              setReceiptId("");
             }}
           >
             <WalletCards className="h-3.5 w-3.5" />
@@ -93,13 +95,19 @@ export default function AdminWalletsPage() {
       toast.error("Enter a valid amount");
       return;
     }
+    if (!reason.trim() || !receiptId.trim()) {
+      toast.error("Reason and receipt ID are required");
+      return;
+    }
     setBusy(true);
     try {
       const res = await payflowAdminApi.adjustWallet({
         uid: selected.uid,
         direction,
         amount: value,
-        note,
+        reason: reason.trim(),
+        receiptId: receiptId.trim(),
+        note: reason.trim(),
       });
       toast.success(`New balance ${formatINR(res.balance)}`);
       setSelected(null);
@@ -165,9 +173,16 @@ export default function AdminWalletsPage() {
             onChange={(e) => setAmount(e.target.value)}
           />
           <Input
-            label="Note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+            label="Reason (required)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+          />
+          <Input
+            label="Receipt ID (required)"
+            value={receiptId}
+            onChange={(e) => setReceiptId(e.target.value)}
+            required
           />
           <Button className="w-full" loading={busy} onClick={() => void submit()}>
             Apply adjustment

@@ -6,6 +6,7 @@ import { useAppStore } from "@/store/app-store";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { BottomNav } from "./BottomNav";
+import { PinLockGate } from "@/components/security/PinLockGate";
 
 const titles: Record<string, string> = {
   "/dashboard": "Home",
@@ -57,6 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <PinLockGate>
     <div className="relative z-[1] flex min-h-screen">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
@@ -65,5 +67,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <BottomNav />
     </div>
+    </PinLockGate>
   );
 }

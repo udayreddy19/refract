@@ -32,6 +32,8 @@
   RewriteRule ^admin/payments/?$ admin/payments.html [L]
   RewriteRule ^admin/settings/?$ admin/settings.html [L]
   RewriteRule ^admin/audit/?$ admin/audit.html [L]
+  RewriteRule ^admin/disputes/?$ admin/disputes.html [L]
+  RewriteRule ^admin/settlements/?$ admin/settlements.html [L]
   RewriteRule ^admin/analytics/?$ admin/analytics.html [L]
   RewriteRule ^admin/control/?$ admin/control.html [L]
   RewriteRule ^changelog/?$ changelog.html [L]

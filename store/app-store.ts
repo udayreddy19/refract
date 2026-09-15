@@ -3,12 +3,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AgentUser, NotificationItem } from "@/lib/types";
+import type { Locale } from "@/lib/i18n";
 
 interface AppState {
   user: AgentUser | null;
   token: string | null;
   walletBalance: number;
   theme: "light" | "dark";
+  locale: Locale;
+  pinEnabled: boolean;
+  sessionUnlocked: boolean;
   sidebarCollapsed: boolean;
   sidebarMobileOpen: boolean;
   notifications: NotificationItem[];
@@ -19,6 +23,10 @@ interface AppState {
   setWalletBalance: (balance: number) => void;
   setTheme: (theme: "light" | "dark") => void;
   toggleTheme: () => void;
+  setLocale: (locale: Locale) => void;
+  setPinEnabled: (v: boolean) => void;
+  unlockSession: () => void;
+  lockSession: () => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (v: boolean) => void;
   setSidebarMobileOpen: (v: boolean) => void;
@@ -34,22 +42,37 @@ export const useAppStore = create<AppState>()(
       token: null,
       walletBalance: 0,
       theme: "light",
+      locale: "en",
+      pinEnabled: false,
+      sessionUnlocked: true,
       sidebarCollapsed: false,
       sidebarMobileOpen: false,
       notifications: [],
       twoFactorEnabled: false,
       loginNotifications: true,
       setAuth: (user, token, balance) =>
-        set({
+        set((s) => ({
           user,
           token,
+          sessionUnlocked: !s.pinEnabled,
           ...(typeof balance === "number" ? { walletBalance: balance } : {}),
+        })),
+      logout: () =>
+        set({
+          user: null,
+          token: null,
+          walletBalance: 0,
+          sessionUnlocked: true,
         }),
-      logout: () => set({ user: null, token: null, walletBalance: 0 }),
       setWalletBalance: (walletBalance) => set({ walletBalance }),
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
         set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
+      setLocale: (locale) => set({ locale }),
+      setPinEnabled: (pinEnabled) =>
+        set({ pinEnabled, sessionUnlocked: pinEnabled ? false : true }),
+      unlockSession: () => set({ sessionUnlocked: true }),
+      lockSession: () => set({ sessionUnlocked: false }),
       toggleSidebar: () =>
         set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
@@ -68,6 +91,8 @@ export const useAppStore = create<AppState>()(
         token: s.token,
         walletBalance: s.walletBalance,
         theme: s.theme,
+        locale: s.locale,
+        pinEnabled: s.pinEnabled,
         sidebarCollapsed: s.sidebarCollapsed,
         twoFactorEnabled: s.twoFactorEnabled,
         loginNotifications: s.loginNotifications,

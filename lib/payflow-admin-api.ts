@@ -25,8 +25,14 @@ export type PayflowAgent = {
   email: string;
   mobile: string;
   status: "active" | "disabled" | string;
+  kycStatus?: "pending" | "verified" | "blocked" | string;
   city?: string;
   notes?: string;
+  parentUid?: string | null;
+  locale?: string;
+  branding?: { logoUrl?: string; primaryColor?: string; displayName?: string } | null;
+  hasPin?: boolean;
+  dailyDebitCap?: number | null;
   balance: number;
   createdAt?: string;
   updatedAt?: string;
@@ -44,6 +50,29 @@ export type PayflowLedgerEntry = {
   source?: string;
   agentId?: string;
   agentName?: string;
+};
+
+export type PayflowAuditEntry = {
+  id: string;
+  action: string;
+  actorRole?: string;
+  uid?: string;
+  reason?: string;
+  receiptId?: string;
+  at: string;
+  agentId?: string;
+};
+
+export type PayflowDispute = {
+  id: string;
+  uid: string;
+  agentId: string;
+  utr: string;
+  amount: number;
+  status: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PayflowAdminDashboard = {
@@ -75,10 +104,10 @@ export const payflowAdminApi = {
   },
 
   mutateAgent: (body: Record<string, unknown>) =>
-    adminFetch<{ success: boolean; agent: PayflowAgent }>("/api/payflow/admin/agents.php", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    adminFetch<{ success: boolean; agent: PayflowAgent; created?: PayflowAgent[]; errors?: unknown[] }>(
+      "/api/payflow/admin/agents.php",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
 
   wallets: (uid = "") => {
     const qs = uid ? `?uid=${encodeURIComponent(uid)}` : "";
@@ -90,6 +119,8 @@ export const payflowAdminApi = {
     agentId?: string;
     direction: "credit" | "debit";
     amount: number;
+    reason: string;
+    receiptId: string;
     note?: string;
   }) =>
     adminFetch<{ success: boolean; balance: number; agent: PayflowAgent }>(
@@ -107,4 +138,60 @@ export const payflowAdminApi = {
       `/api/payflow/admin/ledger.php${qs ? `?${qs}` : ""}`
     );
   },
+
+  audit: (limit = 100, action = "") => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (action) params.set("action", action);
+    return adminFetch<{ entries: PayflowAuditEntry[]; mysql: boolean }>(
+      `/api/payflow/admin/audit.php?${params}`
+    );
+  },
+
+  migrate: () =>
+    adminFetch<{ success: boolean; imported: Record<string, number> }>(
+      "/api/payflow/admin/migrate.php",
+      { method: "POST", body: "{}" }
+    ),
+
+  disputes: (status = "") => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return adminFetch<{ disputes: PayflowDispute[] }>(`/api/payflow/admin/disputes.php${qs}`);
+  },
+
+  mutateDispute: (body: Record<string, unknown>) =>
+    adminFetch<{ success: boolean; dispute?: PayflowDispute }>("/api/payflow/admin/disputes.php", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  settlements: (uid = "") => {
+    const qs = uid ? `?uid=${encodeURIComponent(uid)}` : "";
+    return adminFetch<{
+      settlements: Array<{
+        id: string;
+        uid: string;
+        day: string;
+        openingBalance: number;
+        closingBalance: number;
+        credits: number;
+        debits: number;
+      }>;
+      commissionRules: Array<{
+        id: string;
+        product: string;
+        feeFlat: number;
+        feePct: number;
+        marginFlat: number;
+        marginPct: number;
+        active: boolean;
+      }>;
+    }>(`/api/payflow/admin/settlements.php${qs}`);
+  },
+
+  updateCommission: (body: Record<string, unknown>) =>
+    adminFetch<{ success: boolean }>("/api/payflow/admin/settlements.php", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

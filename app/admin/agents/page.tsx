@@ -115,6 +115,15 @@ export default function AdminAgentsPage() {
         ),
       },
       {
+        accessorKey: "kycStatus",
+        header: "KYC",
+        cell: ({ row }) => (
+          <span className="text-sm capitalize text-[var(--t-mid)]">
+            {row.original.kycStatus || "pending"}
+          </span>
+        ),
+      },
+      {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => {
@@ -212,6 +221,7 @@ export default function AdminAgentsPage() {
         mobile: form.mobile,
         city: form.city,
         notes: form.notes,
+        kycStatus: (editAgent.kycStatus as string) || "pending",
       });
       toast.success("Retailer updated");
       setEditAgent(null);
@@ -279,6 +289,47 @@ export default function AdminAgentsPage() {
               <Plus className="h-4 w-4" />
               Add retailer
             </Button>
+            <label className="inline-flex cursor-pointer items-center">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = async () => {
+                    const text = String(reader.result || "");
+                    const lines = text.split(/\r?\n/).filter(Boolean);
+                    const header = lines[0]?.toLowerCase() || "";
+                    const start = header.includes("agentid") ? 1 : 0;
+                    const rows = lines.slice(start).map((line) => {
+                      const [agentId, name, passcode, mobile, email, city] = line
+                        .split(",")
+                        .map((c) => c.trim().replace(/^"|"$/g, ""));
+                      return { agentId, name, passcode, mobile, email, city };
+                    });
+                    try {
+                      const res = await payflowAdminApi.mutateAgent({
+                        action: "bulk_create",
+                        rows,
+                      });
+                      toast.success(
+                        `Created ${(res.created as unknown[] | undefined)?.length || 0} retailers`
+                      );
+                      void load();
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Bulk import failed");
+                    }
+                  };
+                  reader.readAsText(file);
+                  e.target.value = "";
+                }}
+              />
+              <span className="inline-flex h-10 items-center rounded-full border border-[var(--g-border)] bg-[var(--input-bg)] px-4 text-sm font-medium text-[var(--t-hi)]">
+                Import CSV
+              </span>
+            </label>
           </div>
         </Card>
 
@@ -368,6 +419,20 @@ export default function AdminAgentsPage() {
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
+          {editAgent && (
+            <Select
+              label="KYC status"
+              value={editAgent.kycStatus || "pending"}
+              onChange={(e) =>
+                setEditAgent({ ...editAgent, kycStatus: e.target.value })
+              }
+              options={[
+                { value: "pending", label: "Pending" },
+                { value: "verified", label: "Verified" },
+                { value: "blocked", label: "Blocked" },
+              ]}
+            />
+          )}
           <Button className="w-full" loading={busy} onClick={() => void saveEdit()}>
             Save changes
           </Button>

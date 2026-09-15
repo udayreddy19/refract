@@ -12,6 +12,9 @@ import {
   Shield,
   Loader2,
   Store,
+  ScrollText,
+  AlertTriangle,
+  Scale,
 } from "lucide-react";
 import { adminApi } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -29,6 +32,9 @@ const NAV = [
   { href: "/admin/agents", label: "Retailers", icon: Store },
   { href: "/admin/wallets", label: "Wallets", icon: Wallet },
   { href: "/admin/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/admin/audit", label: "Audit", icon: ScrollText },
+  { href: "/admin/disputes", label: "Disputes", icon: AlertTriangle },
+  { href: "/admin/settlements", label: "Settlements", icon: Scale },
 ];
 
 export default function AdminShell({

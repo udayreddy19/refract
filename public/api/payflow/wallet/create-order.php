@@ -53,11 +53,7 @@ if ($provider === 'RAZORPAY') {
             $deposit['orderId'] = 'order_demo_' . time();
             $deposit['status'] = 'CREATED';
             $deposit['demoMode'] = true;
-            mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
-                if (!is_array($rows)) $rows = [];
-                $rows[] = $deposit;
-                return $rows;
-            }, []);
+            payflow_deposit_save($deposit);
             json_response([
                 'success' => true,
                 'demoMode' => true,
@@ -88,11 +84,7 @@ if ($provider === 'RAZORPAY') {
     }
     $deposit['orderId'] = (string) $api['body']['id'];
     $deposit['status'] = 'CREATED';
-    mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
-        if (!is_array($rows)) $rows = [];
-        $rows[] = $deposit;
-        return $rows;
-    }, []);
+    payflow_deposit_save($deposit);
 
     json_response([
         'success' => true,
@@ -112,11 +104,7 @@ if (!cashfree_is_configured()) {
         $deposit['orderId'] = $depositId;
         $deposit['paymentSessionId'] = 'session_demo_' . time();
         $deposit['demoMode'] = true;
-        mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
-            if (!is_array($rows)) $rows = [];
-            $rows[] = $deposit;
-            return $rows;
-        }, []);
+        payflow_deposit_save($deposit);
         json_response([
             'success' => true,
             'demoMode' => true,
@@ -158,11 +146,7 @@ $deposit['orderId'] = (string) ($cf['body']['order_id'] ?? $depositId);
 $deposit['paymentSessionId'] = (string) $cf['body']['payment_session_id'];
 $deposit['cfOrderId'] = $cf['body']['cf_order_id'] ?? null;
 
-mutate_store('payflow_deposits.json', function ($rows) use ($deposit) {
-    if (!is_array($rows)) $rows = [];
-    $rows[] = $deposit;
-    return $rows;
-}, []);
+payflow_deposit_save($deposit);
 
 json_response([
     'success' => true,

@@ -72,6 +72,10 @@ export default function ProfilePage() {
   const setTwoFactor = useAppStore((s) => s.setTwoFactor);
   const loginNotifications = useAppStore((s) => s.loginNotifications);
   const setLoginNotifications = useAppStore((s) => s.setLoginNotifications);
+  const pinEnabled = useAppStore((s) => s.pinEnabled);
+  const setPinEnabled = useAppStore((s) => s.setPinEnabled);
+  const locale = useAppStore((s) => s.locale);
+  const setLocale = useAppStore((s) => s.setLocale);
   const user = storeUser;
 
   const [passcodeOpen, setPasscodeOpen] = useState(false);
@@ -183,11 +187,108 @@ export default function ProfilePage() {
               label="Login notifications"
               description="Get alerts when your agent account is accessed from a new session."
             />
+            <Toggle
+              checked={pinEnabled}
+              onChange={async (v) => {
+                if (v) {
+                  const pin = window.prompt("Set a 4–6 digit app PIN");
+                  if (!pin || !/^\d{4,6}$/.test(pin)) {
+                    toast.error("PIN must be 4–6 digits");
+                    return;
+                  }
+                  try {
+                    const token = useAppStore.getState().token;
+                    const res = await fetch("/api/payflow/security.php", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: {
+                        "Content-Type": "application/json",
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                      body: JSON.stringify({ action: "set_pin", pin }),
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error((data as { error?: string }).error || "Failed");
+                    }
+                    setPinEnabled(true);
+                    toast.success("App PIN enabled");
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Failed to set PIN");
+                  }
+                } else {
+                  try {
+                    const token = useAppStore.getState().token;
+                    await fetch("/api/payflow/security.php", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: {
+                        "Content-Type": "application/json",
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                      body: JSON.stringify({ action: "clear_pin" }),
+                    });
+                    setPinEnabled(false);
+                    toast.success("App PIN disabled");
+                  } catch {
+                    toast.error("Failed to clear PIN");
+                  }
+                }
+              }}
+              label="App PIN lock"
+              description="Lock the portal when you leave the tab."
+            />
+            <div className="rounded-[10px] border border-border bg-background px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Language / भाषा</p>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={locale === "en" ? "primary" : "secondary"}
+                  onClick={() => setLocale("en")}
+                >
+                  English
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={locale === "hi" ? "primary" : "secondary"}
+                  onClick={() => setLocale("hi")}
+                >
+                  हिन्दी
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-[10px] border border-border bg-background px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Invite sub-retailer</p>
+              <Button
+                type="button"
+                className="mt-2"
+                size="sm"
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/payflow/security.php", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ action: "invite" }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Failed");
+                    toast.success(`Invite code: ${data.inviteCode}`);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Failed");
+                  }
+                }}
+              >
+                Generate invite code
+              </Button>
+            </div>
             <div className="rounded-[10px] border border-border bg-background px-4 py-3">
               <p className="text-sm font-medium text-foreground">Session management</p>
               <p className="mt-1 text-xs text-muted">
                 You are signed in on this browser. Signing out clears your local session token.
-                Active device review and remote logout will be available once the backend session API is connected.
               </p>
             </div>
           </div>

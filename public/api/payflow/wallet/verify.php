@@ -15,14 +15,7 @@ if ($depositId === '' || $orderId === '' || !in_array($provider, ['RAZORPAY', 'C
     json_response(['error' => 'Invalid verification payload'], 400);
 }
 
-$deposit = null;
-$deposits = read_store('payflow_deposits.json', []);
-foreach ($deposits as $row) {
-    if (($row['id'] ?? '') === $depositId) {
-        $deposit = $row;
-        break;
-    }
-}
+$deposit = payflow_deposit_find($depositId);
 if (!$deposit || ($deposit['uid'] ?? '') !== $agent['uid']) {
     json_response(['error' => 'Deposit not found'], 404);
 }
@@ -115,29 +108,9 @@ if ($provider === 'CASHFREE') {
     }
 }
 
-// Idempotent credit — claim once via _credited
-$shouldCredit = false;
-mutate_store('payflow_deposits.json', function ($rows) use ($depositId, $paymentId, $utr, &$shouldCredit) {
-    if (!is_array($rows)) $rows = [];
-    foreach ($rows as $i => $row) {
-        if (($row['id'] ?? '') !== $depositId) {
-            continue;
-        }
-        if (!empty($row['_credited']) || ($row['status'] ?? '') === 'PAID') {
-            $shouldCredit = false;
-            return $rows;
-        }
-        $rows[$i]['status'] = 'PAID';
-        $rows[$i]['paymentId'] = $paymentId;
-        $rows[$i]['utr'] = $utr;
-        $rows[$i]['updatedAt'] = gmdate('c');
-        $rows[$i]['paidAt'] = gmdate('c');
-        $rows[$i]['_credited'] = true;
-        $shouldCredit = true;
-        break;
-    }
-    return $rows;
-}, []);
+// Idempotent credit — claim once via credited flag
+$claim = payflow_deposit_mark_paid_and_claim_credit($orderId, (string) $paymentId, (string) $utr, null, $depositId);
+$shouldCredit = !empty($claim['shouldCredit']);
 
 $balance = $shouldCredit
     ? payflow_wallet_credit($agent['uid'], $amount, [
