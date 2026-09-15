@@ -2,7 +2,15 @@
   "auth": {
     "providers": {
       "emailPassword": true,
-      "anonymous": false
+      "anonymous": false,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "PayFlow Agent",
+        "supportEmail": "agent@reconcilex.in",
+        "authorizedRedirectUris": [
+          "https://reconcilex.in",
+          "https://www.reconcilex.in"
+        ]
+      }
     }
   }
 }
